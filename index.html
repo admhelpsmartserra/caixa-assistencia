@@ -93,6 +93,7 @@
   <div class="tabs">
     <div class="tab active" id="tabCaixaBtn" onclick="mudarAba('caixa')">Caixa do dia</div>
     <div class="tab" id="tabOrdemBtn" onclick="mudarAba('ordem')">Ordem financeira</div>
+    <div class="tab" id="tabRelBtn" onclick="mudarAba('relatorios')">Relatórios</div>
   </div>
 
   <!-- ABA: CAIXA DO DIA -->
@@ -295,6 +296,78 @@
       </div>
     </div>
   </div>
+
+  <!-- ABA: RELATÓRIOS -->
+  <div id="abaRelatorios" class="hidden">
+    <div class="card">
+      <h2>Fechamento por dia</h2>
+      <div class="row2">
+        <div>
+          <label>Escolher data</label>
+          <input type="date" id="relDia">
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button style="margin:0" onclick="consultarFechamentoDia()">Consultar</button>
+        </div>
+      </div>
+      <div class="grid" style="margin-top:16px">
+        <div class="stat"><div class="lbl">Saldo inicial</div><div class="val" id="relDiaSaldoInicial">R$ 0,00</div></div>
+        <div class="stat pos"><div class="lbl">Entradas</div><div class="val" id="relDiaEntradas">R$ 0,00</div></div>
+        <div class="stat neg"><div class="lbl">Saídas</div><div class="val" id="relDiaSaidas">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Saldo final</div><div class="val" id="relDiaSaldoFinal">R$ 0,00</div></div>
+      </div>
+      <div class="formas">
+        <div class="stat"><div class="lbl">Dinheiro</div><div class="val" id="relDiaDinheiro">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Pix</div><div class="val" id="relDiaPix">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Cartão</div><div class="val" id="relDiaCartao">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Cheque</div><div class="val" id="relDiaCheque">R$ 0,00</div></div>
+      </div>
+      <table>
+        <thead><tr><th>Hora</th><th>41 / ASC</th><th>Descrição</th><th>Forma</th><th>Valor</th></tr></thead>
+        <tbody id="relDiaTabela"></tbody>
+      </table>
+      <div class="empty" id="relDiaVazio" style="display:none">Nenhum lançamento nesse dia.</div>
+    </div>
+
+    <div class="card">
+      <h2>Relatório por período</h2>
+      <div class="row3">
+        <div>
+          <label>De</label>
+          <input type="date" id="relPerDe">
+        </div>
+        <div>
+          <label>Até</label>
+          <input type="date" id="relPerAte">
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button style="margin:0" onclick="consultarPeriodo()">Consultar</button>
+        </div>
+      </div>
+      <div class="grid" style="margin-top:16px">
+        <div class="stat pos"><div class="lbl">Entradas</div><div class="val" id="relPerEntradas">R$ 0,00</div></div>
+        <div class="stat neg"><div class="lbl">Saídas</div><div class="val" id="relPerSaidas">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Saldo do período</div><div class="val" id="relPerSaldo">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Lançamentos</div><div class="val" id="relPerQtd">0</div></div>
+      </div>
+      <div class="formas">
+        <div class="stat"><div class="lbl">Dinheiro</div><div class="val" id="relPerDinheiro">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Pix</div><div class="val" id="relPerPix">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Cartão</div><div class="val" id="relPerCartao">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Cheque</div><div class="val" id="relPerCheque">R$ 0,00</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Ordens com saldo pendente</h2>
+      <button class="secondary" onclick="consultarPendencias()">Atualizar lista</button>
+      <table>
+        <thead><tr><th>41</th><th>ASC Job</th><th>Esperado</th><th>Recebido</th><th>Pendente</th><th>Criada em</th></tr></thead>
+        <tbody id="relPendTabela"></tbody>
+      </table>
+      <div class="empty" id="relPendVazio" style="display:none">Nenhuma ordem com saldo pendente.</div>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -324,8 +397,10 @@
   window.mudarAba = function(aba){
     document.getElementById('abaCaixa').classList.toggle('hidden', aba !== 'caixa');
     document.getElementById('abaOrdem').classList.toggle('hidden', aba !== 'ordem');
+    document.getElementById('abaRelatorios').classList.toggle('hidden', aba !== 'relatorios');
     document.getElementById('tabCaixaBtn').classList.toggle('active', aba === 'caixa');
     document.getElementById('tabOrdemBtn').classList.toggle('active', aba === 'ordem');
+    document.getElementById('tabRelBtn').classList.toggle('active', aba === 'relatorios');
   };
 
   // ---------- CAIXA DO DIA ----------
@@ -575,6 +650,127 @@
     document.getElementById('ordemRecebido').textContent = fmt(recebido);
     document.getElementById('ordemPendente').textContent = fmt(pendente);
   }
+
+  // ---------- RELATÓRIOS ----------
+  function inicioDia(dateStr){ return new Date(dateStr + 'T00:00:00'); }
+  function fimDia(dateStr){ const d = inicioDia(dateStr); d.setDate(d.getDate() + 1); return d; }
+
+  document.getElementById('relDia').value = hojeISO;
+
+  window.consultarFechamentoDia = async function(){
+    const dia = document.getElementById('relDia').value;
+    if(!dia){ toast('Escolhe uma data'); return; }
+
+    const { data: saldoRows } = await supabase.from('saldo_inicial').select('valor').eq('dia', dia).maybeSingle();
+    const saldoInicial = saldoRows ? Number(saldoRows.valor) : 0;
+
+    const { data: lancamentos, error } = await supabase
+      .from('lancamentos').select('*')
+      .gte('criado_em', inicioDia(dia).toISOString())
+      .lt('criado_em', fimDia(dia).toISOString())
+      .order('criado_em', { ascending:false });
+
+    if(error){ toast('Erro ao consultar'); console.error(error); return; }
+
+    let entradas = 0, saidas = 0;
+    const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
+    const tbody = document.getElementById('relDiaTabela');
+    tbody.innerHTML = '';
+
+    (lancamentos || []).forEach(l => {
+      if(l.tipo === 'entrada'){ entradas += Number(l.valor); porForma[l.forma_pagamento] += Number(l.valor); }
+      else { saidas += Number(l.valor); porForma[l.forma_pagamento] -= Number(l.valor); }
+      const hora = new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${hora}</td>
+        <td>${l.numero41 || '-'}${l.nosso_numero ? ' / ' + l.nosso_numero : ''}</td>
+        <td>${l.descricao || '-'}</td>
+        <td>${l.forma_pagamento}</td>
+        <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('relDiaVazio').style.display = (lancamentos || []).length ? 'none' : 'block';
+
+    const saldoFinal = saldoInicial + entradas - saidas;
+    document.getElementById('relDiaSaldoInicial').textContent = fmt(saldoInicial);
+    document.getElementById('relDiaEntradas').textContent = fmt(entradas);
+    document.getElementById('relDiaSaidas').textContent = fmt(saidas);
+    document.getElementById('relDiaSaldoFinal').textContent = fmt(saldoFinal);
+    document.getElementById('relDiaDinheiro').textContent = fmt(porForma.dinheiro);
+    document.getElementById('relDiaPix').textContent = fmt(porForma.pix);
+    document.getElementById('relDiaCartao').textContent = fmt(porForma.cartao);
+    document.getElementById('relDiaCheque').textContent = fmt(porForma.cheque);
+  };
+
+  window.consultarPeriodo = async function(){
+    const de = document.getElementById('relPerDe').value;
+    const ate = document.getElementById('relPerAte').value;
+    if(!de || !ate){ toast('Escolhe as duas datas'); return; }
+
+    const { data: lancamentos, error } = await supabase
+      .from('lancamentos').select('*')
+      .gte('criado_em', inicioDia(de).toISOString())
+      .lt('criado_em', fimDia(ate).toISOString());
+
+    if(error){ toast('Erro ao consultar'); console.error(error); return; }
+
+    let entradas = 0, saidas = 0;
+    const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
+    (lancamentos || []).forEach(l => {
+      if(l.tipo === 'entrada'){ entradas += Number(l.valor); porForma[l.forma_pagamento] += Number(l.valor); }
+      else { saidas += Number(l.valor); porForma[l.forma_pagamento] -= Number(l.valor); }
+    });
+
+    document.getElementById('relPerEntradas').textContent = fmt(entradas);
+    document.getElementById('relPerSaidas').textContent = fmt(saidas);
+    document.getElementById('relPerSaldo').textContent = fmt(entradas - saidas);
+    document.getElementById('relPerQtd').textContent = (lancamentos || []).length;
+    document.getElementById('relPerDinheiro').textContent = fmt(porForma.dinheiro);
+    document.getElementById('relPerPix').textContent = fmt(porForma.pix);
+    document.getElementById('relPerCartao').textContent = fmt(porForma.cartao);
+    document.getElementById('relPerCheque').textContent = fmt(porForma.cheque);
+  };
+
+  window.consultarPendencias = async function(){
+    const { data: ordens, error: errO } = await supabase.from('ordens_financeiras').select('*');
+    if(errO){ toast('Erro ao consultar ordens'); console.error(errO); return; }
+
+    const { data: lancs, error: errL } = await supabase
+      .from('lancamentos').select('ordem_id, tipo, valor').not('ordem_id', 'is', null);
+    if(errL){ toast('Erro ao consultar lançamentos'); console.error(errL); return; }
+
+    const recebidoPorOrdem = {};
+    (lancs || []).forEach(l => {
+      const atual = recebidoPorOrdem[l.ordem_id] || 0;
+      recebidoPorOrdem[l.ordem_id] = atual + (l.tipo === 'entrada' ? Number(l.valor) : -Number(l.valor));
+    });
+
+    const pendentes = (ordens || []).map(o => {
+      const esperado = Number(o.taxa_analise_valor || 0) + Number(o.orcamento_valor || 0);
+      const recebido = recebidoPorOrdem[o.id] || 0;
+      return { ...o, esperado, recebido, pendente: esperado - recebido };
+    }).filter(o => o.pendente > 0.01)
+      .sort((a,b) => new Date(a.criado_em) - new Date(b.criado_em));
+
+    const tbody = document.getElementById('relPendTabela');
+    tbody.innerHTML = '';
+    pendentes.forEach(o => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${o.numero41}</td>
+        <td>${o.asc_job}</td>
+        <td>${fmt(o.esperado)}</td>
+        <td>${fmt(o.recebido)}</td>
+        <td class="valor saida">${fmt(o.pendente)}</td>
+        <td>${new Date(o.criado_em).toLocaleDateString('pt-BR')}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('relPendVazio').style.display = pendentes.length ? 'none' : 'block';
+  };
 
   carregarCaixa();
 </script>
