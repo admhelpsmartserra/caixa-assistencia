@@ -10,20 +10,28 @@
     --text:#22241F; --muted:#6B6A62;
     --accent:#0F6E56; --accent-bg:#E1F5EE;
     --red:#A32D2D; --red-bg:#FCEBEB;
+    --amber:#854F0B; --amber-bg:#FAEEDA;
   }
   *{box-sizing:border-box;}
   body{
     margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
     background:var(--bg); color:var(--text); padding:24px 16px 80px;
   }
-  .wrap{max-width:760px; margin:0 auto;}
+  .wrap{max-width:780px; margin:0 auto;}
   h1{font-size:22px; font-weight:600; margin:0 0 2px;}
-  .sub{color:var(--muted); font-size:14px; margin:0 0 24px;}
+  .sub{color:var(--muted); font-size:14px; margin:0 0 16px;}
+  .tabs{display:flex; gap:8px; margin-bottom:20px;}
+  .tab{
+    padding:10px 16px; border-radius:8px; border:1px solid var(--border); background:var(--card);
+    color:var(--muted); font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .tab.active{background:var(--accent); color:#fff; border-color:var(--accent);}
   .card{
     background:var(--card); border:1px solid var(--border); border-radius:12px;
     padding:20px; margin-bottom:20px;
   }
   h2{font-size:15px; font-weight:600; margin:0 0 16px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted);}
+  h3{font-size:14px; font-weight:600; margin:0 0 10px;}
   .grid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px;}
   @media(min-width:600px){ .grid{grid-template-columns:repeat(4,1fr);} }
   .stat{background:var(--bg); border-radius:10px; padding:14px;}
@@ -31,6 +39,7 @@
   .stat .val{font-size:20px; font-weight:600;}
   .stat.pos .val{color:var(--accent);}
   .stat.neg .val{color:var(--red);}
+  .stat.warn .val{color:var(--amber);}
   .formas{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:12px;}
   .formas .stat{padding:10px;}
   .formas .val{font-size:15px;}
@@ -42,12 +51,14 @@
   }
   input:focus,select:focus{outline:2px solid var(--accent); outline-offset:-1px;}
   .row2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;}
   button{
     margin-top:16px; width:100%; padding:12px; border:none; border-radius:8px;
     background:var(--accent); color:#fff; font-size:15px; font-weight:600; cursor:pointer;
   }
   button:hover{opacity:.92;}
-  button.secondary{background:var(--card); color:var(--accent); border:1px solid var(--accent); margin-top:8px;}
+  button.secondary{background:var(--card); color:var(--accent); border:1px solid var(--accent);}
+  button.small{padding:8px 14px; font-size:13px; margin-top:8px; width:auto;}
   table{width:100%; border-collapse:collapse; font-size:14px; margin-top:8px;}
   th,td{text-align:left; padding:10px 8px; border-bottom:1px solid var(--border);}
   th{color:var(--muted); font-size:12px; text-transform:uppercase; font-weight:600;}
@@ -58,12 +69,20 @@
   .toast{
     position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
     background:var(--text); color:#fff; padding:10px 18px; border-radius:8px;
-    font-size:14px; opacity:0; transition:opacity .2s; pointer-events:none;
+    font-size:14px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:10;
   }
   .toast.show{opacity:1;}
   .saldo-row{display:flex; gap:8px; align-items:flex-end; margin-bottom:16px;}
   .saldo-row div{flex:1;}
   .saldo-row button{margin:0; width:auto; padding:10px 16px;}
+  .pill{display:inline-block; font-size:12px; padding:3px 8px; border-radius:20px; font-weight:600;}
+  .pill.paga{background:var(--accent-bg); color:var(--accent);}
+  .pill.pendente{background:var(--amber-bg); color:var(--amber);}
+  .hidden{display:none;}
+  .ordem-header{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;}
+  .ordem-header button{width:auto; margin:0;}
+  .sub-item{border-top:1px solid var(--border); padding-top:16px; margin-top:16px;}
+  .sub-item:first-child{border-top:none; padding-top:0; margin-top:0;}
 </style>
 </head>
 <body>
@@ -71,78 +90,210 @@
   <h1>Caixa</h1>
   <p class="sub" id="dataHoje"></p>
 
-  <div class="card">
-    <h2>Resumo de hoje</h2>
-    <div class="saldo-row">
-      <div>
-        <label>Saldo inicial do dia</label>
-        <input type="number" id="saldoInicial" step="0.01" placeholder="0,00">
+  <div class="tabs">
+    <div class="tab active" id="tabCaixaBtn" onclick="mudarAba('caixa')">Caixa do dia</div>
+    <div class="tab" id="tabOrdemBtn" onclick="mudarAba('ordem')">Ordem financeira</div>
+  </div>
+
+  <!-- ABA: CAIXA DO DIA -->
+  <div id="abaCaixa">
+    <div class="card">
+      <h2>Resumo de hoje</h2>
+      <div class="saldo-row">
+        <div>
+          <label>Saldo inicial do dia</label>
+          <input type="number" id="saldoInicial" step="0.01" placeholder="0,00">
+        </div>
+        <button class="secondary" onclick="salvarSaldoInicial()">Salvar</button>
       </div>
-      <button class="secondary" style="margin-top:0" onclick="salvarSaldoInicial()">Salvar</button>
+      <div class="grid">
+        <div class="stat"><div class="lbl">Saldo inicial</div><div class="val" id="cardSaldoInicial">R$ 0,00</div></div>
+        <div class="stat pos"><div class="lbl">Entradas</div><div class="val" id="cardEntradas">R$ 0,00</div></div>
+        <div class="stat neg"><div class="lbl">Saídas</div><div class="val" id="cardSaidas">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Saldo final</div><div class="val" id="cardSaldoFinal">R$ 0,00</div></div>
+      </div>
+      <div class="formas">
+        <div class="stat"><div class="lbl">Dinheiro</div><div class="val" id="fDinheiro">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Pix</div><div class="val" id="fPix">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Cartão</div><div class="val" id="fCartao">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Cheque</div><div class="val" id="fCheque">R$ 0,00</div></div>
+      </div>
     </div>
-    <div class="grid">
-      <div class="stat"><div class="lbl">Saldo inicial</div><div class="val" id="cardSaldoInicial">R$ 0,00</div></div>
-      <div class="stat pos"><div class="lbl">Entradas</div><div class="val" id="cardEntradas">R$ 0,00</div></div>
-      <div class="stat neg"><div class="lbl">Saídas</div><div class="val" id="cardSaidas">R$ 0,00</div></div>
-      <div class="stat"><div class="lbl">Saldo final</div><div class="val" id="cardSaldoFinal">R$ 0,00</div></div>
+
+    <div class="card">
+      <h2>Novo lançamento avulso (venda, troco...)</h2>
+      <div class="row2">
+        <div>
+          <label>Número 41 (opcional)</label>
+          <input type="text" id="numero41" placeholder="4175875755">
+        </div>
+        <div>
+          <label>ASC Job (opcional)</label>
+          <input type="text" id="ascJobAvulso" placeholder="OR1051">
+        </div>
+      </div>
+      <div class="row2">
+        <div>
+          <label>Tipo</label>
+          <select id="tipo">
+            <option value="entrada">Entrada (recebimento)</option>
+            <option value="saida">Saída (pagamento/troco)</option>
+          </select>
+        </div>
+        <div>
+          <label>Forma de pagamento</label>
+          <select id="formaPagamento">
+            <option value="dinheiro">Dinheiro</option>
+            <option value="pix">Pix</option>
+            <option value="cartao">Cartão</option>
+            <option value="cheque">Cheque</option>
+          </select>
+        </div>
+      </div>
+      <label>Valor (R$)</label>
+      <input type="number" id="valor" step="0.01" placeholder="0,00">
+      <label>Descrição</label>
+      <input type="text" id="descricao" placeholder="Ex: película, adiantamento, troco...">
+      <button onclick="lancar()">Registrar lançamento</button>
     </div>
-    <div class="formas">
-      <div class="stat"><div class="lbl">Dinheiro</div><div class="val" id="fDinheiro">R$ 0,00</div></div>
-      <div class="stat"><div class="lbl">Pix</div><div class="val" id="fPix">R$ 0,00</div></div>
-      <div class="stat"><div class="lbl">Cartão</div><div class="val" id="fCartao">R$ 0,00</div></div>
-      <div class="stat"><div class="lbl">Cheque</div><div class="val" id="fCheque">R$ 0,00</div></div>
+
+    <div class="card">
+      <h2>Lançamentos de hoje</h2>
+      <table>
+        <thead>
+          <tr><th>Hora</th><th>41 / ASC</th><th>Descrição</th><th>Forma</th><th>Valor</th><th></th></tr>
+        </thead>
+        <tbody id="tabelaBody"></tbody>
+      </table>
+      <div class="empty" id="vazio" style="display:none">Nenhum lançamento hoje ainda.</div>
     </div>
   </div>
 
-  <div class="card">
-    <h2>Novo lançamento</h2>
-    <div class="row2">
-      <div>
-        <label>Número 41</label>
-        <input type="text" id="numero41" placeholder="4175875755">
+  <!-- ABA: ORDEM FINANCEIRA -->
+  <div id="abaOrdem" class="hidden">
+    <div class="card">
+      <h2>Abrir ou criar ordem financeira</h2>
+      <div class="row2">
+        <div>
+          <label>Número 41</label>
+          <input type="text" id="ordemNumero41" placeholder="4175875755">
+        </div>
+        <div>
+          <label>ASC Job</label>
+          <input type="text" id="ordemAscJob" placeholder="OR1051">
+        </div>
       </div>
-      <div>
-        <label>Nosso número</label>
-        <input type="text" id="nossoNumero" placeholder="OR1051">
-      </div>
+      <button onclick="abrirOrdem()">Abrir</button>
     </div>
-    <div class="row2">
-      <label style="grid-column:1/-1"></label>
-    </div>
-    <div class="row2">
-      <div>
-        <label>Tipo</label>
-        <select id="tipo">
-          <option value="entrada">Entrada (recebimento)</option>
-          <option value="saida">Saída (pagamento/troco)</option>
-        </select>
-      </div>
-      <div>
-        <label>Forma de pagamento</label>
-        <select id="formaPagamento">
-          <option value="dinheiro">Dinheiro</option>
-          <option value="pix">Pix</option>
-          <option value="cartao">Cartão</option>
-          <option value="cheque">Cheque</option>
-        </select>
-      </div>
-    </div>
-    <label>Valor (R$)</label>
-    <input type="number" id="valor" step="0.01" placeholder="0,00">
-    <label>Descrição</label>
-    <input type="text" id="descricao" placeholder="Ex: película, adiantamento, troco...">
-    <button onclick="lancar()">Registrar lançamento</button>
-  </div>
 
-  <div class="card">
-    <h2>Lançamentos de hoje</h2>
-    <table>
-      <thead>
-        <tr><th>Hora</th><th>41 / Nº</th><th>Descrição</th><th>Forma</th><th>Valor</th><th></th></tr>
-      </thead>
-      <tbody id="tabelaBody"></tbody>
-    </table>
-    <div class="empty" id="vazio" style="display:none">Nenhum lançamento hoje ainda.</div>
+    <div id="painelOrdem" class="hidden">
+      <div class="card">
+        <div class="ordem-header">
+          <div>
+            <h3 id="ordemTitulo">Ordem</h3>
+            <p class="sub" id="ordemSub" style="margin:0"></p>
+          </div>
+          <button class="secondary" onclick="fecharOrdem()">Trocar ordem</button>
+        </div>
+        <div class="grid">
+          <div class="stat"><div class="lbl">Valor esperado</div><div class="val" id="ordemEsperado">R$ 0,00</div></div>
+          <div class="stat pos"><div class="lbl">Recebido</div><div class="val" id="ordemRecebido">R$ 0,00</div></div>
+          <div class="stat warn"><div class="lbl">Saldo pendente</div><div class="val" id="ordemPendente">R$ 0,00</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Taxa de análise</h2>
+        <div class="row3">
+          <div>
+            <label>Valor (R$)</label>
+            <input type="number" id="taxaValor" step="0.01" placeholder="0,00">
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="taxaStatus" onchange="toggleFormaTaxa()">
+              <option value="pendente">Pendente</option>
+              <option value="paga">Já paga</option>
+            </select>
+          </div>
+          <div id="taxaFormaWrap" class="hidden">
+            <label>Forma de pagamento</label>
+            <select id="taxaForma">
+              <option value="dinheiro">Dinheiro</option>
+              <option value="pix">Pix</option>
+              <option value="cartao">Cartão</option>
+              <option value="cheque">Cheque</option>
+            </select>
+          </div>
+        </div>
+        <button class="secondary" onclick="salvarTaxa()">Salvar taxa de análise</button>
+      </div>
+
+      <div class="card">
+        <h2>Orçamento aprovado</h2>
+        <div class="row3">
+          <div>
+            <label>Valor (R$)</label>
+            <input type="number" id="orcValor" step="0.01" placeholder="0,00">
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="orcStatus" onchange="toggleFormaOrc()">
+              <option value="pendente">Pendente</option>
+              <option value="pago">Já pago</option>
+            </select>
+          </div>
+          <div id="orcFormaWrap" class="hidden">
+            <label>Forma de pagamento</label>
+            <select id="orcForma">
+              <option value="dinheiro">Dinheiro</option>
+              <option value="pix">Pix</option>
+              <option value="cartao">Cartão</option>
+              <option value="cheque">Cheque</option>
+            </select>
+          </div>
+        </div>
+        <button class="secondary" onclick="salvarOrcamento()">Salvar orçamento aprovado</button>
+      </div>
+
+      <div class="card">
+        <h2>Lançamento avulso (adiantamento, saldo parcial, estorno...)</h2>
+        <div class="row3">
+          <div>
+            <label>Tipo</label>
+            <select id="avulsoTipo">
+              <option value="entrada">Entrada</option>
+              <option value="saida">Saída (estorno)</option>
+            </select>
+          </div>
+          <div>
+            <label>Forma de pagamento</label>
+            <select id="avulsoForma">
+              <option value="dinheiro">Dinheiro</option>
+              <option value="pix">Pix</option>
+              <option value="cartao">Cartão</option>
+              <option value="cheque">Cheque</option>
+            </select>
+          </div>
+          <div>
+            <label>Valor (R$)</label>
+            <input type="number" id="avulsoValor" step="0.01" placeholder="0,00">
+          </div>
+        </div>
+        <label>Descrição (obrigatória)</label>
+        <input type="text" id="avulsoDescricao" placeholder="Ex: adiantamento do cliente">
+        <button onclick="lancarAvulsoOrdem()">Registrar lançamento avulso</button>
+      </div>
+
+      <div class="card">
+        <h2>Histórico completo desta ordem</h2>
+        <table>
+          <thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Forma</th><th>Valor</th></tr></thead>
+          <tbody id="ordemTabelaBody"></tbody>
+        </table>
+        <div class="empty" id="ordemVazio" style="display:none">Nenhum lançamento registrado nesta ordem ainda.</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -151,7 +302,7 @@
 <script type="module">
   import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-  // ⚠️ troque pelos valores do seu projeto Supabase (Project Settings > API)
+  // troque pelos valores do seu projeto Supabase (Project Settings > API)
   const SUPABASE_URL = 'https://eqjwawkkgpvevmoctcnz.supabase.co';
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxandhd2trZ3B2ZXZtb2N0Y256Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxODMzMDAsImV4cCI6MjA5ODc1OTMwMH0.pIE17PSXjwZTcANFQ470UW1vbYl4O0w_sc3bnCBBNh4';
 
@@ -161,75 +312,70 @@
   const hojeISO = hoje.toISOString().slice(0,10);
   document.getElementById('dataHoje').textContent = hoje.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
 
-  function fmt(v){
-    return 'R$ ' + Number(v).toFixed(2).replace('.', ',');
+  function fmt(v){ return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ','); }
+  function inicioDoDia(){ const d = new Date(); d.setHours(0,0,0,0); return d.toISOString(); }
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(()=> t.classList.remove('show'), 2200);
   }
 
-  function inicioDoDia(){
-    const d = new Date();
-    d.setHours(0,0,0,0);
-    return d.toISOString();
-  }
+  // ---------- ABAS ----------
+  window.mudarAba = function(aba){
+    document.getElementById('abaCaixa').classList.toggle('hidden', aba !== 'caixa');
+    document.getElementById('abaOrdem').classList.toggle('hidden', aba !== 'ordem');
+    document.getElementById('tabCaixaBtn').classList.toggle('active', aba === 'caixa');
+    document.getElementById('tabOrdemBtn').classList.toggle('active', aba === 'ordem');
+  };
 
+  // ---------- CAIXA DO DIA ----------
   window.salvarSaldoInicial = async function(){
     const valor = parseFloat(document.getElementById('saldoInicial').value) || 0;
     const { error } = await supabase.from('saldo_inicial').upsert({ dia: hojeISO, valor });
     if(error){ toast('Erro ao salvar saldo inicial'); console.error(error); return; }
     toast('Saldo inicial salvo');
-    carregar();
+    carregarCaixa();
   };
 
   window.lancar = async function(){
     const numero41 = document.getElementById('numero41').value.trim();
-    const nossoNumero = document.getElementById('nossoNumero').value.trim();
+    const ascJob = document.getElementById('ascJobAvulso').value.trim();
     const tipo = document.getElementById('tipo').value;
     const formaPagamento = document.getElementById('formaPagamento').value;
     const valor = parseFloat(document.getElementById('valor').value);
     const descricao = document.getElementById('descricao').value.trim();
 
-    if(!numero41 || !valor || valor <= 0){
-      toast('Preenche número 41 e valor');
-      return;
-    }
+    if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
 
     const { error } = await supabase.from('lancamentos').insert({
-      numero41, nosso_numero: nossoNumero, tipo, forma_pagamento: formaPagamento,
+      numero41: numero41 || null, nosso_numero: ascJob || null, tipo, forma_pagamento: formaPagamento,
       valor, descricao
     });
-
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
     document.getElementById('numero41').value = '';
-    document.getElementById('nossoNumero').value = '';
+    document.getElementById('ascJobAvulso').value = '';
     document.getElementById('valor').value = '';
     document.getElementById('descricao').value = '';
 
     toast('Lançamento registrado');
-    carregar();
+    carregarCaixa();
   };
 
   window.excluir = async function(id){
     if(!confirm('Excluir esse lançamento?')) return;
     const { error } = await supabase.from('lancamentos').delete().eq('id', id);
     if(error){ toast('Erro ao excluir'); console.error(error); return; }
-    carregar();
+    carregarCaixa();
   };
 
-  function toast(msg){
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    setTimeout(()=> t.classList.remove('show'), 2200);
-  }
-
-  async function carregar(){
+  async function carregarCaixa(){
     const { data: saldoRows } = await supabase.from('saldo_inicial').select('valor').eq('dia', hojeISO).maybeSingle();
     const saldoInicial = saldoRows ? Number(saldoRows.valor) : 0;
     document.getElementById('saldoInicial').value = saldoInicial || '';
 
     const { data: lancamentos, error } = await supabase
-      .from('lancamentos')
-      .select('*')
+      .from('lancamentos').select('*')
       .gte('criado_em', inicioDoDia())
       .order('criado_em', { ascending:false });
 
@@ -237,7 +383,6 @@
 
     let entradas = 0, saidas = 0;
     const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
-
     const tbody = document.getElementById('tabelaBody');
     tbody.innerHTML = '';
 
@@ -249,7 +394,7 @@
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${hora}</td>
-        <td>${l.numero41}${l.nosso_numero ? ' / ' + l.nosso_numero : ''}</td>
+        <td>${l.numero41 || '-'}${l.nosso_numero ? ' / ' + l.nosso_numero : ''}</td>
         <td>${l.descricao || '-'}</td>
         <td>${l.forma_pagamento}</td>
         <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
@@ -271,7 +416,167 @@
     document.getElementById('fCheque').textContent = fmt(porForma.cheque);
   }
 
-  carregar();
+  // ---------- ORDEM FINANCEIRA ----------
+  let currentOrdem = null;
+
+  window.toggleFormaTaxa = function(){
+    document.getElementById('taxaFormaWrap').classList.toggle('hidden', document.getElementById('taxaStatus').value !== 'paga');
+  };
+  window.toggleFormaOrc = function(){
+    document.getElementById('orcFormaWrap').classList.toggle('hidden', document.getElementById('orcStatus').value !== 'pago');
+  };
+
+  window.abrirOrdem = async function(){
+    const numero41 = document.getElementById('ordemNumero41').value.trim();
+    const ascJob = document.getElementById('ordemAscJob').value.trim();
+    if(!numero41 || !ascJob){ toast('Preenche número 41 e ASC Job'); return; }
+
+    let { data: existente, error } = await supabase
+      .from('ordens_financeiras').select('*')
+      .eq('numero41', numero41).eq('asc_job', ascJob).maybeSingle();
+
+    if(error){ toast('Erro ao buscar ordem'); console.error(error); return; }
+
+    if(!existente){
+      const { data: nova, error: errIns } = await supabase
+        .from('ordens_financeiras').insert({ numero41, asc_job: ascJob }).select().single();
+      if(errIns){ toast('Erro ao criar ordem'); console.error(errIns); return; }
+      existente = nova;
+      toast('Ordem criada');
+    } else {
+      toast('Ordem encontrada');
+    }
+
+    currentOrdem = existente;
+    await renderOrdem();
+  };
+
+  window.fecharOrdem = function(){
+    currentOrdem = null;
+    document.getElementById('painelOrdem').classList.add('hidden');
+    document.getElementById('ordemNumero41').value = '';
+    document.getElementById('ordemAscJob').value = '';
+  };
+
+  async function jaTemLancamentoCategoria(categoria){
+    const { count } = await supabase
+      .from('lancamentos').select('id', { count:'exact', head:true })
+      .eq('ordem_id', currentOrdem.id).eq('categoria', categoria);
+    return (count || 0) > 0;
+  }
+
+  window.salvarTaxa = async function(){
+    const valor = parseFloat(document.getElementById('taxaValor').value);
+    const status = document.getElementById('taxaStatus').value;
+    if(!valor || valor <= 0){ toast('Preenche o valor da taxa'); return; }
+
+    const { error } = await supabase.from('ordens_financeiras')
+      .update({ taxa_analise_valor: valor, taxa_analise_status: status })
+      .eq('id', currentOrdem.id);
+    if(error){ toast('Erro ao salvar taxa'); console.error(error); return; }
+
+    if(status === 'paga' && !(await jaTemLancamentoCategoria('taxa_analise'))){
+      const forma = document.getElementById('taxaForma').value;
+      await supabase.from('lancamentos').insert({
+        ordem_id: currentOrdem.id, categoria:'taxa_analise', tipo:'entrada',
+        forma_pagamento: forma, valor, descricao:'Taxa de análise',
+        numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job
+      });
+    }
+    toast('Taxa de análise salva');
+    currentOrdem.taxa_analise_valor = valor;
+    currentOrdem.taxa_analise_status = status;
+    await renderOrdem(true);
+  };
+
+  window.salvarOrcamento = async function(){
+    const valor = parseFloat(document.getElementById('orcValor').value);
+    const status = document.getElementById('orcStatus').value;
+    if(!valor || valor <= 0){ toast('Preenche o valor do orçamento'); return; }
+
+    const { error } = await supabase.from('ordens_financeiras')
+      .update({ orcamento_valor: valor, orcamento_status: status })
+      .eq('id', currentOrdem.id);
+    if(error){ toast('Erro ao salvar orçamento'); console.error(error); return; }
+
+    if(status === 'pago' && !(await jaTemLancamentoCategoria('orcamento_aprovado'))){
+      const forma = document.getElementById('orcForma').value;
+      await supabase.from('lancamentos').insert({
+        ordem_id: currentOrdem.id, categoria:'orcamento_aprovado', tipo:'entrada',
+        forma_pagamento: forma, valor, descricao:'Orçamento aprovado',
+        numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job
+      });
+    }
+    toast('Orçamento salvo');
+    currentOrdem.orcamento_valor = valor;
+    currentOrdem.orcamento_status = status;
+    await renderOrdem(true);
+  };
+
+  window.lancarAvulsoOrdem = async function(){
+    const tipo = document.getElementById('avulsoTipo').value;
+    const forma = document.getElementById('avulsoForma').value;
+    const valor = parseFloat(document.getElementById('avulsoValor').value);
+    const descricao = document.getElementById('avulsoDescricao').value.trim();
+
+    if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
+    if(!descricao){ toast('Descrição é obrigatória nesse tipo de lançamento'); return; }
+
+    const { error } = await supabase.from('lancamentos').insert({
+      ordem_id: currentOrdem.id, categoria:'avulso', tipo, forma_pagamento: forma,
+      valor, descricao, numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job
+    });
+    if(error){ toast('Erro ao registrar'); console.error(error); return; }
+
+    document.getElementById('avulsoValor').value = '';
+    document.getElementById('avulsoDescricao').value = '';
+    toast('Lançamento avulso registrado');
+    await renderOrdem(true);
+  };
+
+  async function renderOrdem(pularAbrirPainel){
+    document.getElementById('ordemTitulo').textContent = `41: ${currentOrdem.numero41} · ASC Job: ${currentOrdem.asc_job}`;
+    document.getElementById('ordemSub').textContent = 'Criada em ' + new Date(currentOrdem.criado_em).toLocaleString('pt-BR');
+    document.getElementById('painelOrdem').classList.remove('hidden');
+
+    document.getElementById('taxaValor').value = currentOrdem.taxa_analise_valor || '';
+    document.getElementById('taxaStatus').value = currentOrdem.taxa_analise_status || 'pendente';
+    toggleFormaTaxa();
+    document.getElementById('orcValor').value = currentOrdem.orcamento_valor || '';
+    document.getElementById('orcStatus').value = currentOrdem.orcamento_status || 'pendente';
+    toggleFormaOrc();
+
+    const { data: lancamentos, error } = await supabase
+      .from('lancamentos').select('*').eq('ordem_id', currentOrdem.id)
+      .order('criado_em', { ascending:false });
+    if(error){ console.error(error); return; }
+
+    let recebido = 0;
+    const tbody = document.getElementById('ordemTabelaBody');
+    tbody.innerHTML = '';
+    (lancamentos || []).forEach(l => {
+      if(l.tipo === 'entrada') recebido += Number(l.valor); else recebido -= Number(l.valor);
+      const data = new Date(l.criado_em).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${data}</td>
+        <td>${l.categoria || '-'}</td>
+        <td>${l.descricao || '-'}</td>
+        <td>${l.forma_pagamento}</td>
+        <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('ordemVazio').style.display = (lancamentos || []).length ? 'none' : 'block';
+
+    const esperado = Number(currentOrdem.taxa_analise_valor || 0) + Number(currentOrdem.orcamento_valor || 0);
+    const pendente = esperado - recebido;
+    document.getElementById('ordemEsperado').textContent = fmt(esperado);
+    document.getElementById('ordemRecebido').textContent = fmt(recebido);
+    document.getElementById('ordemPendente').textContent = fmt(pendente);
+  }
+
+  carregarCaixa();
 </script>
 </body>
 </html>
