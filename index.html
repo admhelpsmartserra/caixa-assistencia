@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caixa</title>
+<style>
+  :root{
+    --bg:#F6F6F3; --card:#FFFFFF; --border:#E3E1D9;
+    --text:#22241F; --muted:#6B6A62;
+    --accent:#0F6E56; --accent-bg:#E1F5EE;
+    --red:#A32D2D; --red-bg:#FCEBEB;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); padding:24px 16px 80px;
+  }
+  .wrap{max-width:760px; margin:0 auto;}
+  h1{font-size:22px; font-weight:600; margin:0 0 2px;}
+  .sub{color:var(--muted); font-size:14px; margin:0 0 24px;}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:20px; margin-bottom:20px;
+  }
+  h2{font-size:15px; font-weight:600; margin:0 0 16px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted);}
+  .grid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px;}
+  @media(min-width:600px){ .grid{grid-template-columns:repeat(4,1fr);} }
+  .stat{background:var(--bg); border-radius:10px; padding:14px;}
+  .stat .lbl{font-size:12px; color:var(--muted); margin-bottom:4px;}
+  .stat .val{font-size:20px; font-weight:600;}
+  .stat.pos .val{color:var(--accent);}
+  .stat.neg .val{color:var(--red);}
+  .formas{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:12px;}
+  .formas .stat{padding:10px;}
+  .formas .val{font-size:15px;}
+  label{display:block; font-size:13px; color:var(--muted); margin-bottom:4px; margin-top:12px;}
+  label:first-child{margin-top:0;}
+  input,select{
+    width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px;
+    font-size:15px; background:var(--card); color:var(--text);
+  }
+  input:focus,select:focus{outline:2px solid var(--accent); outline-offset:-1px;}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  button{
+    margin-top:16px; width:100%; padding:12px; border:none; border-radius:8px;
+    background:var(--accent); color:#fff; font-size:15px; font-weight:600; cursor:pointer;
+  }
+  button:hover{opacity:.92;}
+  button.secondary{background:var(--card); color:var(--accent); border:1px solid var(--accent); margin-top:8px;}
+  table{width:100%; border-collapse:collapse; font-size:14px; margin-top:8px;}
+  th,td{text-align:left; padding:10px 8px; border-bottom:1px solid var(--border);}
+  th{color:var(--muted); font-size:12px; text-transform:uppercase; font-weight:600;}
+  td.valor.entrada{color:var(--accent); font-weight:600;}
+  td.valor.saida{color:var(--red); font-weight:600;}
+  .del{background:none; border:none; color:var(--red); cursor:pointer; font-size:13px; width:auto; margin:0; padding:4px 8px;}
+  .empty{color:var(--muted); font-size:14px; padding:12px 0; text-align:center;}
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:var(--text); color:#fff; padding:10px 18px; border-radius:8px;
+    font-size:14px; opacity:0; transition:opacity .2s; pointer-events:none;
+  }
+  .toast.show{opacity:1;}
+  .saldo-row{display:flex; gap:8px; align-items:flex-end; margin-bottom:16px;}
+  .saldo-row div{flex:1;}
+  .saldo-row button{margin:0; width:auto; padding:10px 16px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Caixa</h1>
+  <p class="sub" id="dataHoje"></p>
+
+  <div class="card">
+    <h2>Resumo de hoje</h2>
+    <div class="saldo-row">
+      <div>
+        <label>Saldo inicial do dia</label>
+        <input type="number" id="saldoInicial" step="0.01" placeholder="0,00">
+      </div>
+      <button class="secondary" style="margin-top:0" onclick="salvarSaldoInicial()">Salvar</button>
+    </div>
+    <div class="grid">
+      <div class="stat"><div class="lbl">Saldo inicial</div><div class="val" id="cardSaldoInicial">R$ 0,00</div></div>
+      <div class="stat pos"><div class="lbl">Entradas</div><div class="val" id="cardEntradas">R$ 0,00</div></div>
+      <div class="stat neg"><div class="lbl">Saídas</div><div class="val" id="cardSaidas">R$ 0,00</div></div>
+      <div class="stat"><div class="lbl">Saldo final</div><div class="val" id="cardSaldoFinal">R$ 0,00</div></div>
+    </div>
+    <div class="formas">
+      <div class="stat"><div class="lbl">Dinheiro</div><div class="val" id="fDinheiro">R$ 0,00</div></div>
+      <div class="stat"><div class="lbl">Pix</div><div class="val" id="fPix">R$ 0,00</div></div>
+      <div class="stat"><div class="lbl">Cartão</div><div class="val" id="fCartao">R$ 0,00</div></div>
+      <div class="stat"><div class="lbl">Cheque</div><div class="val" id="fCheque">R$ 0,00</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Novo lançamento</h2>
+    <div class="row2">
+      <div>
+        <label>Número 41</label>
+        <input type="text" id="numero41" placeholder="4175875755">
+      </div>
+      <div>
+        <label>Nosso número</label>
+        <input type="text" id="nossoNumero" placeholder="OR1051">
+      </div>
+    </div>
+    <div class="row2">
+      <label style="grid-column:1/-1"></label>
+    </div>
+    <div class="row2">
+      <div>
+        <label>Tipo</label>
+        <select id="tipo">
+          <option value="entrada">Entrada (recebimento)</option>
+          <option value="saida">Saída (pagamento/troco)</option>
+        </select>
+      </div>
+      <div>
+        <label>Forma de pagamento</label>
+        <select id="formaPagamento">
+          <option value="dinheiro">Dinheiro</option>
+          <option value="pix">Pix</option>
+          <option value="cartao">Cartão</option>
+          <option value="cheque">Cheque</option>
+        </select>
+      </div>
+    </div>
+    <label>Valor (R$)</label>
+    <input type="number" id="valor" step="0.01" placeholder="0,00">
+    <label>Descrição</label>
+    <input type="text" id="descricao" placeholder="Ex: película, adiantamento, troco...">
+    <button onclick="lancar()">Registrar lançamento</button>
+  </div>
+
+  <div class="card">
+    <h2>Lançamentos de hoje</h2>
+    <table>
+      <thead>
+        <tr><th>Hora</th><th>41 / Nº</th><th>Descrição</th><th>Forma</th><th>Valor</th><th></th></tr>
+      </thead>
+      <tbody id="tabelaBody"></tbody>
+    </table>
+    <div class="empty" id="vazio" style="display:none">Nenhum lançamento hoje ainda.</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+  // ⚠️ troque pelos valores do seu projeto Supabase (Project Settings > API)
+  const SUPABASE_URL = 'https://eqjwawkkgpvevmoctcnz.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxandhd2trZ3B2ZXZtb2N0Y256Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxODMzMDAsImV4cCI6MjA5ODc1OTMwMH0.pIE17PSXjwZTcANFQ470UW1vbYl4O0w_sc3bnCBBNh4';
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const hoje = new Date();
+  const hojeISO = hoje.toISOString().slice(0,10);
+  document.getElementById('dataHoje').textContent = hoje.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
+
+  function fmt(v){
+    return 'R$ ' + Number(v).toFixed(2).replace('.', ',');
+  }
+
+  function inicioDoDia(){
+    const d = new Date();
+    d.setHours(0,0,0,0);
+    return d.toISOString();
+  }
+
+  window.salvarSaldoInicial = async function(){
+    const valor = parseFloat(document.getElementById('saldoInicial').value) || 0;
+    const { error } = await supabase.from('saldo_inicial').upsert({ dia: hojeISO, valor });
+    if(error){ toast('Erro ao salvar saldo inicial'); console.error(error); return; }
+    toast('Saldo inicial salvo');
+    carregar();
+  };
+
+  window.lancar = async function(){
+    const numero41 = document.getElementById('numero41').value.trim();
+    const nossoNumero = document.getElementById('nossoNumero').value.trim();
+    const tipo = document.getElementById('tipo').value;
+    const formaPagamento = document.getElementById('formaPagamento').value;
+    const valor = parseFloat(document.getElementById('valor').value);
+    const descricao = document.getElementById('descricao').value.trim();
+
+    if(!numero41 || !valor || valor <= 0){
+      toast('Preenche número 41 e valor');
+      return;
+    }
+
+    const { error } = await supabase.from('lancamentos').insert({
+      numero41, nosso_numero: nossoNumero, tipo, forma_pagamento: formaPagamento,
+      valor, descricao
+    });
+
+    if(error){ toast('Erro ao registrar'); console.error(error); return; }
+
+    document.getElementById('numero41').value = '';
+    document.getElementById('nossoNumero').value = '';
+    document.getElementById('valor').value = '';
+    document.getElementById('descricao').value = '';
+
+    toast('Lançamento registrado');
+    carregar();
+  };
+
+  window.excluir = async function(id){
+    if(!confirm('Excluir esse lançamento?')) return;
+    const { error } = await supabase.from('lancamentos').delete().eq('id', id);
+    if(error){ toast('Erro ao excluir'); console.error(error); return; }
+    carregar();
+  };
+
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(()=> t.classList.remove('show'), 2200);
+  }
+
+  async function carregar(){
+    const { data: saldoRows } = await supabase.from('saldo_inicial').select('valor').eq('dia', hojeISO).maybeSingle();
+    const saldoInicial = saldoRows ? Number(saldoRows.valor) : 0;
+    document.getElementById('saldoInicial').value = saldoInicial || '';
+
+    const { data: lancamentos, error } = await supabase
+      .from('lancamentos')
+      .select('*')
+      .gte('criado_em', inicioDoDia())
+      .order('criado_em', { ascending:false });
+
+    if(error){ console.error(error); return; }
+
+    let entradas = 0, saidas = 0;
+    const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
+
+    const tbody = document.getElementById('tabelaBody');
+    tbody.innerHTML = '';
+
+    (lancamentos || []).forEach(l => {
+      if(l.tipo === 'entrada'){ entradas += Number(l.valor); porForma[l.forma_pagamento] += Number(l.valor); }
+      else { saidas += Number(l.valor); porForma[l.forma_pagamento] -= Number(l.valor); }
+
+      const hora = new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${hora}</td>
+        <td>${l.numero41}${l.nosso_numero ? ' / ' + l.nosso_numero : ''}</td>
+        <td>${l.descricao || '-'}</td>
+        <td>${l.forma_pagamento}</td>
+        <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
+        <td><button class="del" onclick="excluir(${l.id})">excluir</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('vazio').style.display = (lancamentos || []).length ? 'none' : 'block';
+
+    const saldoFinal = saldoInicial + entradas - saidas;
+    document.getElementById('cardSaldoInicial').textContent = fmt(saldoInicial);
+    document.getElementById('cardEntradas').textContent = fmt(entradas);
+    document.getElementById('cardSaidas').textContent = fmt(saidas);
+    document.getElementById('cardSaldoFinal').textContent = fmt(saldoFinal);
+    document.getElementById('fDinheiro').textContent = fmt(porForma.dinheiro);
+    document.getElementById('fPix').textContent = fmt(porForma.pix);
+    document.getElementById('fCartao').textContent = fmt(porForma.cartao);
+    document.getElementById('fCheque').textContent = fmt(porForma.cheque);
+  }
+
+  carregar();
+</script>
+</body>
+</html>
