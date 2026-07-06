@@ -644,7 +644,9 @@
     });
     document.getElementById('ordemVazio').style.display = (lancamentos || []).length ? 'none' : 'block';
 
-    const esperado = Number(currentOrdem.taxa_analise_valor || 0) + Number(currentOrdem.orcamento_valor || 0);
+    const orcamentoValor = Number(currentOrdem.orcamento_valor || 0);
+    const taxaValor = Number(currentOrdem.taxa_analise_valor || 0);
+    const esperado = orcamentoValor > 0 ? orcamentoValor : taxaValor;
     const pendente = esperado - recebido;
     document.getElementById('ordemEsperado').textContent = fmt(esperado);
     document.getElementById('ordemRecebido').textContent = fmt(recebido);
@@ -749,7 +751,9 @@
     });
 
     const pendentes = (ordens || []).map(o => {
-      const esperado = Number(o.taxa_analise_valor || 0) + Number(o.orcamento_valor || 0);
+      const orcamentoValor = Number(o.orcamento_valor || 0);
+      const taxaValor = Number(o.taxa_analise_valor || 0);
+      const esperado = orcamentoValor > 0 ? orcamentoValor : taxaValor;
       const recebido = recebidoPorOrdem[o.id] || 0;
       return { ...o, esperado, recebido, pendente: esperado - recebido };
     }).filter(o => o.pendente > 0.01)
