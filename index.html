@@ -341,6 +341,11 @@
   <!-- ABA: RELATÓRIOS -->
   <div id="abaRelatorios" class="hidden">
     <div class="card">
+      <h2>Evolução do faturamento (últimos 12 meses)</h2>
+      <canvas id="graficoFaturamento" height="90"></canvas>
+    </div>
+
+    <div class="card">
       <h2>Fechamento por dia</h2>
       <div class="row2">
         <div>
@@ -449,6 +454,8 @@
 
 <script type="module">
   import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+  import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js/+esm';
+  Chart.register(...registerables);
 
   // troque pelos valores do seu projeto Supabase (Project Settings > API)
   const SUPABASE_URL = 'https://eqjwawkkgpvevmoctcnz.supabase.co';
@@ -530,6 +537,66 @@
     setTimeout(()=> t.classList.remove('show'), 2200);
   }
 
+  let graficoFaturamento = null;
+
+  function ultimos12Meses(){
+    const hoje = new Date();
+    const meses = [];
+    for(let i = 11; i >= 0; i--){
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      meses.push({ ano: d.getFullYear(), mes: d.getMonth(), chave: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` });
+    }
+    return meses;
+  }
+
+  async function carregarGraficoFaturamento(){
+    const meses = ultimos12Meses();
+    const inicio = new Date(meses[0].ano, meses[0].mes, 1, 0,0,0,0);
+
+    const { data: lancamentos, error } = await supabase
+      .from('lancamentos').select('valor, ordem_id, natureza, criado_em')
+      .eq('tipo', 'entrada')
+      .gte('criado_em', inicio.toISOString());
+
+    if(error){ console.error(error); return; }
+
+    const vendasPorMes = {}, osPorMes = {};
+    meses.forEach(m => { vendasPorMes[m.chave] = 0; osPorMes[m.chave] = 0; });
+
+    (lancamentos || []).forEach(l => {
+      const d = new Date(l.criado_em);
+      const chave = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      if(!(chave in vendasPorMes)) return;
+      const valor = Number(l.valor);
+      if(l.ordem_id){ osPorMes[chave] += valor; }
+      else if(l.natureza !== 'aporte'){ vendasPorMes[chave] += valor; }
+    });
+
+    const labels = meses.map(m => new Date(m.ano, m.mes, 1).toLocaleDateString('pt-BR', { month:'short', year:'2-digit' }));
+    const dadosVendas = meses.map(m => vendasPorMes[m.chave]);
+    const dadosOS = meses.map(m => osPorMes[m.chave]);
+    const dadosFaturamento = meses.map(m => vendasPorMes[m.chave] + osPorMes[m.chave]);
+
+    if(graficoFaturamento) graficoFaturamento.destroy();
+    const ctx = document.getElementById('graficoFaturamento').getContext('2d');
+    graficoFaturamento = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Faturamento total', data: dadosFaturamento, borderColor: '#1B6B52', backgroundColor: '#1B6B52', tension: 0.25 },
+          { label: 'Vendas', data: dadosVendas, borderColor: '#3D7DC9', backgroundColor: '#3D7DC9', tension: 0.25 },
+          { label: 'Ordens de serviço', data: dadosOS, borderColor: '#C98B3D', backgroundColor: '#C98B3D', tension: 0.25 }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true, ticks: { callback: v => 'R$ ' + v } } }
+      }
+    });
+  }
+
   function descreverMotivo(l){
     if(l.ordem_id){
       if(l.categoria === 'taxa_analise') return 'Taxa de análise (OS)';
@@ -594,6 +661,7 @@
     document.getElementById('tabCaixaBtn').classList.toggle('active', aba === 'caixa');
     document.getElementById('tabOrdemBtn').classList.toggle('active', aba === 'ordem');
     document.getElementById('tabRelBtn').classList.toggle('active', aba === 'relatorios');
+    if(aba === 'relatorios') carregarGraficoFaturamento();
   };
 
   // ---------- CAIXA DO DIA ----------
