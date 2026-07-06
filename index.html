@@ -330,7 +330,7 @@
       <div class="card">
         <h2>Histórico completo desta ordem</h2>
         <table>
-          <thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Forma</th><th>Valor</th><th></th></tr></thead>
+          <thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Forma</th><th>Valor</th></tr></thead>
           <tbody id="ordemTabelaBody"></tbody>
         </table>
         <div class="empty" id="ordemVazio" style="display:none">Nenhum lançamento registrado nesta ordem ainda.</div>
@@ -351,11 +351,19 @@
           <button style="margin:0" onclick="consultarFechamentoDia()">Consultar</button>
         </div>
       </div>
-      <div class="grid" style="margin-top:16px">
-        <div class="stat"><div class="lbl">Saldo inicial</div><div class="val" id="relDiaSaldoInicial">R$ 0,00</div></div>
-        <div class="stat pos"><div class="lbl">Entradas</div><div class="val" id="relDiaEntradas">R$ 0,00</div></div>
-        <div class="stat neg"><div class="lbl">Saídas</div><div class="val" id="relDiaSaidas">R$ 0,00</div></div>
-        <div class="stat"><div class="lbl">Saldo final</div><div class="val" id="relDiaSaldoFinal">R$ 0,00</div></div>
+      <h3 style="margin-top:16px; margin-bottom:8px; font-size:15px;">Saldo em dinheiro</h3>
+      <div class="grid">
+        <div class="stat"><div class="lbl">Dinheiro (início)</div><div class="val" id="relDiaSaldoInicial">R$ 0,00</div></div>
+        <div class="stat neg"><div class="lbl">Retirada malote (sangria)</div><div class="val" id="relDiaSangria">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Dinheiro (final do dia)</div><div class="val" id="relDiaSaldoFinal">R$ 0,00</div></div>
+      </div>
+      <h3 style="margin-top:20px; margin-bottom:8px; font-size:15px;">Resumo do dia (todas as formas)</h3>
+      <div class="grid">
+        <div class="stat pos"><div class="lbl">Total de vendas</div><div class="val" id="relDiaVendas">R$ 0,00</div></div>
+        <div class="stat pos"><div class="lbl">Entradas avulsas (aporte)</div><div class="val" id="relDiaAporte">R$ 0,00</div></div>
+        <div class="stat pos"><div class="lbl">Total de OS</div><div class="val" id="relDiaOS">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Faturamento total</div><div class="val" id="relDiaFaturamento">R$ 0,00</div></div>
+        <div class="stat neg"><div class="lbl">Total de saídas</div><div class="val" id="relDiaSaidas">R$ 0,00</div></div>
       </div>
       <div class="formas">
         <div class="stat"><div class="lbl">Dinheiro</div><div class="val" id="relDiaDinheiro">R$ 0,00</div></div>
@@ -825,9 +833,9 @@
 
   window.salvarTaxa = async function(){
     if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
-    const valor = parseFloat(document.getElementById('taxaValor').value) || 0;
+    const valor = parseFloat(document.getElementById('taxaValor').value);
     const status = document.getElementById('taxaStatus').value;
-    if(status === 'paga' && valor <= 0){ toast('Preenche o valor da taxa antes de marcar como paga'); return; }
+    if(!valor || valor <= 0){ toast('Preenche o valor da taxa'); return; }
 
     const { error } = await supabase.from('ordens_financeiras')
       .update({ taxa_analise_valor: valor, taxa_analise_status: status })
@@ -851,9 +859,9 @@
 
   window.salvarOrcamento = async function(){
     if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
-    const valor = parseFloat(document.getElementById('orcValor').value) || 0;
+    const valor = parseFloat(document.getElementById('orcValor').value);
     const status = document.getElementById('orcStatus').value;
-    if(status === 'pago' && valor <= 0){ toast('Preenche o valor do orçamento antes de marcar como pago'); return; }
+    if(!valor || valor <= 0){ toast('Preenche o valor do orçamento'); return; }
 
     const { error } = await supabase.from('ordens_financeiras')
       .update({ orcamento_valor: valor, orcamento_status: status })
@@ -898,15 +906,6 @@
     await renderOrdem(true);
   };
 
-  window.excluirLancamentoOrdem = async function(id){
-    if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
-    if(!confirm('Excluir esse lançamento da ordem? Isso também tira o valor do fechamento de caixa do dia em que foi feito.')) return;
-    const { error } = await supabase.from('lancamentos').delete().eq('id', id);
-    if(error){ toast('Erro ao excluir (confere se seu usuário é master)'); console.error(error); return; }
-    toast('Lançamento excluído');
-    await renderOrdem(true);
-  };
-
   async function renderOrdem(pularAbrirPainel){
     document.getElementById('ordemTitulo').textContent = `41: ${currentOrdem.numero41} · ASC Job: ${currentOrdem.asc_job}`;
     document.getElementById('ordemSub').textContent = 'Criada em ' + new Date(currentOrdem.criado_em).toLocaleString('pt-BR');
@@ -946,7 +945,6 @@
         <td>${l.descricao || '-'}</td>
         <td>${l.forma_pagamento}</td>
         <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
-        <td>${currentUserRole === 'master' ? `<button class="del" onclick="excluirLancamentoOrdem(${l.id})">excluir</button>` : ''}</td>
       `;
       tbody.appendChild(tr);
     });
@@ -982,14 +980,29 @@
 
     if(error){ toast('Erro ao consultar'); console.error(error); return; }
 
-    let entradas = 0, saidas = 0;
+    let vendas = 0, aporte = 0, os = 0, saidasNormais = 0, sangria = 0;
+    let entradasDinheiro = 0, saidasDinheiro = 0;
     const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
     const tbody = document.getElementById('relDiaTabela');
     tbody.innerHTML = '';
 
     (lancamentos || []).forEach(l => {
-      if(l.tipo === 'entrada'){ entradas += Number(l.valor); porForma[l.forma_pagamento] += Number(l.valor); }
-      else { saidas += Number(l.valor); porForma[l.forma_pagamento] -= Number(l.valor); }
+      const valor = Number(l.valor);
+      const ehDinheiro = l.forma_pagamento === 'dinheiro';
+
+      if(l.tipo === 'entrada'){
+        porForma[l.forma_pagamento] += valor;
+        if(ehDinheiro) entradasDinheiro += valor;
+        if(l.ordem_id){ os += valor; }
+        else if(l.natureza === 'aporte'){ aporte += valor; }
+        else { vendas += valor; }
+      } else {
+        porForma[l.forma_pagamento] -= valor;
+        if(ehDinheiro) saidasDinheiro += valor;
+        if(l.natureza === 'sangria'){ sangria += valor; }
+        else { saidasNormais += valor; }
+      }
+
       const hora = new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -1006,11 +1019,19 @@
 
     document.getElementById('relDiaVazio').style.display = (lancamentos || []).length ? 'none' : 'block';
 
-    const saldoFinal = saldoInicial + entradas - saidas;
+    const faturamentoTotal = vendas + os;
+    const saldoDinheiroFinal = saldoInicial + entradasDinheiro - saidasDinheiro;
+
     document.getElementById('relDiaSaldoInicial').textContent = fmt(saldoInicial);
-    document.getElementById('relDiaEntradas').textContent = fmt(entradas);
-    document.getElementById('relDiaSaidas').textContent = fmt(saidas);
-    document.getElementById('relDiaSaldoFinal').textContent = fmt(saldoFinal);
+    document.getElementById('relDiaSangria').textContent = fmt(sangria);
+    document.getElementById('relDiaSaldoFinal').textContent = fmt(saldoDinheiroFinal);
+
+    document.getElementById('relDiaVendas').textContent = fmt(vendas);
+    document.getElementById('relDiaAporte').textContent = fmt(aporte);
+    document.getElementById('relDiaOS').textContent = fmt(os);
+    document.getElementById('relDiaFaturamento').textContent = fmt(faturamentoTotal);
+    document.getElementById('relDiaSaidas').textContent = fmt(saidasNormais);
+
     document.getElementById('relDiaDinheiro').textContent = fmt(porForma.dinheiro);
     document.getElementById('relDiaPix').textContent = fmt(porForma.pix);
     document.getElementById('relDiaCartao').textContent = fmt(porForma.cartao);
