@@ -367,6 +367,17 @@
 
     <div class="card">
       <h2>Relatório por período</h2>
+      <label>Atalho rápido</label>
+      <select id="relPerAtalho" onchange="aplicarAtalhoPeriodo()">
+        <option value="">Personalizado (escolha as datas abaixo)</option>
+        <option value="hoje">Hoje</option>
+        <option value="ontem">Ontem</option>
+        <option value="semana">Esta semana (segunda até hoje)</option>
+        <option value="mes_atual">Este mês</option>
+        <option value="mes_passado">Mês passado</option>
+        <option value="ano_atual">Este ano</option>
+        <option value="ano_passado">Ano passado</option>
+      </select>
       <div class="row3">
         <div>
           <label>De</label>
@@ -450,6 +461,56 @@
     const fim = new Date(y, m-1, d, 23,59,59,999);
     return { inicio: inicio.toISOString(), fim: fim.toISOString() };
   }
+
+  function calcularIntervaloAtalho(tipo){
+    const hoje = new Date();
+    const y = hoje.getFullYear(), m = hoje.getMonth(), d = hoje.getDate();
+    switch(tipo){
+      case 'hoje':
+        return { de: dataLocalISO(hoje), ate: dataLocalISO(hoje) };
+      case 'ontem': {
+        const ontem = new Date(y, m, d - 1);
+        return { de: dataLocalISO(ontem), ate: dataLocalISO(ontem) };
+      }
+      case 'semana': {
+        const diaSemana = hoje.getDay(); // 0 = domingo
+        const diffSegunda = diaSemana === 0 ? 6 : diaSemana - 1;
+        const segunda = new Date(y, m, d - diffSegunda);
+        return { de: dataLocalISO(segunda), ate: dataLocalISO(hoje) };
+      }
+      case 'mes_atual': {
+        const primeiro = new Date(y, m, 1);
+        return { de: dataLocalISO(primeiro), ate: dataLocalISO(hoje) };
+      }
+      case 'mes_passado': {
+        const primeiro = new Date(y, m - 1, 1);
+        const ultimo = new Date(y, m, 0);
+        return { de: dataLocalISO(primeiro), ate: dataLocalISO(ultimo) };
+      }
+      case 'ano_atual': {
+        const primeiro = new Date(y, 0, 1);
+        return { de: dataLocalISO(primeiro), ate: dataLocalISO(hoje) };
+      }
+      case 'ano_passado': {
+        const primeiro = new Date(y - 1, 0, 1);
+        const ultimo = new Date(y - 1, 11, 31);
+        return { de: dataLocalISO(primeiro), ate: dataLocalISO(ultimo) };
+      }
+      default:
+        return null;
+    }
+  }
+
+  window.aplicarAtalhoPeriodo = function(){
+    const tipo = document.getElementById('relPerAtalho').value;
+    if(!tipo) return;
+    const intervalo = calcularIntervaloAtalho(tipo);
+    if(!intervalo) return;
+    document.getElementById('relPerDe').value = intervalo.de;
+    document.getElementById('relPerAte').value = intervalo.ate;
+    consultarPeriodo();
+  };
+
   function toast(msg){
     const t = document.getElementById('toast');
     t.textContent = msg; t.classList.add('show');
