@@ -87,14 +87,36 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Caixa</h1>
-  <p class="sub" id="dataHoje"></p>
 
-  <div class="tabs">
-    <div class="tab active" id="tabCaixaBtn" onclick="mudarAba('caixa')">Caixa do dia</div>
-    <div class="tab" id="tabOrdemBtn" onclick="mudarAba('ordem')">Ordem financeira</div>
-    <div class="tab" id="tabRelBtn" onclick="mudarAba('relatorios')">Relatórios</div>
+  <div id="loginScreen">
+    <div class="card" style="max-width:340px; margin:60px auto 0;">
+      <h2>Entrar</h2>
+      <label>Email</label>
+      <input type="email" id="loginEmail" placeholder="seu@email.com">
+      <label>Senha</label>
+      <input type="password" id="loginSenha" placeholder="••••••••" onkeydown="if(event.key==='Enter') fazerLogin()">
+      <button onclick="fazerLogin()">Entrar</button>
+      <p class="sub" id="loginErro" style="color:var(--red); margin-top:8px; min-height:16px;"></p>
+    </div>
   </div>
+
+  <div id="appContent" class="hidden">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+      <div>
+        <h1>Caixa</h1>
+        <p class="sub" id="dataHoje"></p>
+      </div>
+      <div style="text-align:right;">
+        <p class="sub" id="usuarioLogado" style="margin:0 0 6px;"></p>
+        <button class="secondary small" style="margin:0;" onclick="fazerLogout()">Sair</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" id="tabCaixaBtn" onclick="mudarAba('caixa')">Caixa do dia</div>
+      <div class="tab" id="tabOrdemBtn" onclick="mudarAba('ordem')">Ordem financeira</div>
+      <div class="tab" id="tabRelBtn" onclick="mudarAba('relatorios')">Relatórios</div>
+    </div>
 
   <!-- ABA: CAIXA DO DIA -->
   <div id="abaCaixa">
@@ -368,6 +390,7 @@
       <div class="empty" id="relPendVazio" style="display:none">Nenhuma ordem com saldo pendente.</div>
     </div>
   </div>
+  </div><!-- fecha appContent -->
 </div>
 
 <div class="toast" id="toast"></div>
@@ -391,6 +414,39 @@
     const t = document.getElementById('toast');
     t.textContent = msg; t.classList.add('show');
     setTimeout(()=> t.classList.remove('show'), 2200);
+  }
+
+  // ---------- LOGIN ----------
+  window.fazerLogin = async function(){
+    const email = document.getElementById('loginEmail').value.trim();
+    const senha = document.getElementById('loginSenha').value;
+    const errEl = document.getElementById('loginErro');
+    errEl.textContent = '';
+    if(!email || !senha){ errEl.textContent = 'Preenche email e senha'; return; }
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
+    if(error){ errEl.textContent = 'Email ou senha incorretos'; return; }
+
+    document.getElementById('loginSenha').value = '';
+    await mostrarApp();
+  };
+
+  window.fazerLogout = async function(){
+    await supabase.auth.signOut();
+    location.reload();
+  };
+
+  async function mostrarApp(){
+    const { data: { session } } = await supabase.auth.getSession();
+    if(!session){
+      document.getElementById('loginScreen').classList.remove('hidden');
+      document.getElementById('appContent').classList.add('hidden');
+      return;
+    }
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('appContent').classList.remove('hidden');
+    document.getElementById('usuarioLogado').textContent = session.user.email;
+    carregarCaixa();
   }
 
   // ---------- ABAS ----------
@@ -776,7 +832,7 @@
     document.getElementById('relPendVazio').style.display = pendentes.length ? 'none' : 'block';
   };
 
-  carregarCaixa();
+  mostrarApp();
 </script>
 </body>
 </html>
