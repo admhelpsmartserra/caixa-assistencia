@@ -145,16 +145,10 @@
 
     <div class="card">
       <h2>Novo lançamento avulso (venda, troco...)</h2>
-      <div class="row2">
-        <div>
-          <label>Número 41 (opcional)</label>
-          <input type="text" id="numero41" placeholder="4175875755">
-        </div>
-        <div>
-          <label>ASC Job (opcional)</label>
-          <input type="text" id="ascJobAvulso" placeholder="OR1051">
-        </div>
-      </div>
+      <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+        Use isso só pra vendas sem relação com ordem de serviço (película, acessório, troco...).
+        Pra taxa de análise, orçamento ou qualquer pagamento de uma ordem, use a aba <strong>Ordem financeira</strong>.
+      </p>
       <div class="row2">
         <div>
           <label>Tipo</label>
@@ -469,8 +463,6 @@
   };
 
   window.lancar = async function(){
-    const numero41 = document.getElementById('numero41').value.trim();
-    const ascJob = document.getElementById('ascJobAvulso').value.trim();
     const tipo = document.getElementById('tipo').value;
     const formaPagamento = document.getElementById('formaPagamento').value;
     const valor = parseFloat(document.getElementById('valor').value);
@@ -479,13 +471,11 @@
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
 
     const { error } = await supabase.from('lancamentos').insert({
-      numero41: numero41 || null, nosso_numero: ascJob || null, tipo, forma_pagamento: formaPagamento,
+      numero41: null, nosso_numero: null, tipo, forma_pagamento: formaPagamento,
       valor, descricao
     });
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
-    document.getElementById('numero41').value = '';
-    document.getElementById('ascJobAvulso').value = '';
     document.getElementById('valor').value = '';
     document.getElementById('descricao').value = '';
 
