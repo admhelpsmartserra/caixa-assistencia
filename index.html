@@ -405,8 +405,9 @@
           <label>Até</label>
           <input type="date" id="relPerAte">
         </div>
-        <div style="display:flex; align-items:flex-end;">
+        <div style="display:flex; align-items:flex-end; gap:8px;">
           <button style="margin:0" onclick="consultarPeriodo()">Consultar</button>
+          <button class="secondary" style="margin:0" onclick="exportarCSVPeriodo()">Exportar CSV</button>
         </div>
       </div>
       <div class="grid" style="margin-top:16px">
@@ -428,6 +429,15 @@
         <div class="stat pos"><div class="lbl">Ordens de serviço</div><div class="val" id="relPerOS">R$ 0,00</div></div>
         <div class="stat"><div class="lbl">Faturamento total</div><div class="val" id="relPerFaturamento">R$ 0,00</div></div>
         <div class="stat neg"><div class="lbl">Retirada malote (sangria)</div><div class="val" id="relPerSangria">R$ 0,00</div></div>
+      </div>
+      <h3 style="margin-top:20px; margin-bottom:8px; font-size:15px;">Ticket médio e comparação</h3>
+      <p class="sub" style="margin-top:-4px; margin-bottom:10px;">
+        A comparação usa o período imediatamente anterior, com a mesma duração em dias do período escolhido.
+      </p>
+      <div class="grid">
+        <div class="stat"><div class="lbl">Ticket médio (venda/OS)</div><div class="val" id="relPerTicket">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Faturamento período anterior</div><div class="val" id="relPerFaturamentoAnterior">R$ 0,00</div></div>
+        <div class="stat" id="relPerCrescimentoCard"><div class="lbl">Crescimento vs período anterior</div><div class="val" id="relPerCrescimento">—</div></div>
       </div>
       <h3 style="margin-top:20px; margin-bottom:8px; font-size:15px;">Por quem lançou</h3>
       <table>
@@ -631,6 +641,7 @@
 
   let currentUserRole = 'funcionario';
   let currentUserEmail = null;
+  let ultimoPeriodoLancamentos = [];
 
   async function mostrarApp(){
     const { data: { session } } = await supabase.auth.getSession();
@@ -1118,8 +1129,11 @@
 
     if(error){ toast('Erro ao consultar'); console.error(error); return; }
 
+    ultimoPeriodoLancamentos = lancamentos || [];
+
     let entradas = 0, saidas = 0;
     let vendas = 0, aporte = 0, os = 0, saidasNormais = 0, sangria = 0;
+    let qtdFaturamento = 0;
     const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
     const porUsuario = {};
 
@@ -1132,15 +1146,17 @@
       if(l.tipo === 'entrada'){
         entradas += valor; porForma[l.forma_pagamento] += valor;
         porUsuario[email].total += valor;
-        if(l.ordem_id){ os += valor; }
+        if(l.ordem_id){ os += valor; qtdFaturamento++; }
         else if(l.natureza === 'aporte'){ aporte += valor; }
-        else { vendas += valor; }
+        else { vendas += valor; qtdFaturamento++; }
       } else {
         saidas += valor; porForma[l.forma_pagamento] -= valor;
         if(l.natureza === 'sangria'){ sangria += valor; }
         else { saidasNormais += valor; }
       }
     });
+
+    const faturamentoTotal = vendas + os;
 
     document.getElementById('relPerEntradas').textContent = fmt(entradas);
     document.getElementById('relPerSaidas').textContent = fmt(saidas);
@@ -1154,8 +1170,44 @@
     document.getElementById('relPerVendas').textContent = fmt(vendas);
     document.getElementById('relPerAporte').textContent = fmt(aporte);
     document.getElementById('relPerOS').textContent = fmt(os);
-    document.getElementById('relPerFaturamento').textContent = fmt(vendas + os);
+    document.getElementById('relPerFaturamento').textContent = fmt(faturamentoTotal);
     document.getElementById('relPerSangria').textContent = fmt(sangria);
+
+    document.getElementById('relPerTicket').textContent = fmt(qtdFaturamento > 0 ? faturamentoTotal / qtdFaturamento : 0);
+
+    // ---- comparação com o período anterior (mesma duração, imediatamente antes) ----
+    const inicioAtual = inicioDia(de);
+    const fimAtual = fimDia(ate);
+    const duracaoMs = fimAtual - inicioAtual;
+    const fimAnterior = inicioAtual;
+    const inicioAnterior = new Date(inicioAtual.getTime() - duracaoMs);
+
+    const { data: lancsAnterior } = await supabase
+      .from('lancamentos').select('valor, ordem_id, natureza')
+      .eq('tipo', 'entrada')
+      .gte('criado_em', inicioAnterior.toISOString())
+      .lt('criado_em', fimAnterior.toISOString());
+
+    let faturamentoAnterior = 0;
+    (lancsAnterior || []).forEach(l => {
+      const isAporte = !l.ordem_id && l.natureza === 'aporte';
+      if(!isAporte) faturamentoAnterior += Number(l.valor);
+    });
+
+    document.getElementById('relPerFaturamentoAnterior').textContent = fmt(faturamentoAnterior);
+
+    const crescimentoEl = document.getElementById('relPerCrescimento');
+    const crescimentoCard = document.getElementById('relPerCrescimentoCard');
+    crescimentoCard.classList.remove('pos', 'neg');
+    if(faturamentoAnterior > 0){
+      const pct = ((faturamentoTotal - faturamentoAnterior) / faturamentoAnterior) * 100;
+      crescimentoEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+      crescimentoCard.classList.add(pct >= 0 ? 'pos' : 'neg');
+    } else if(faturamentoTotal > 0){
+      crescimentoEl.textContent = 'novo (sem período anterior)';
+    } else {
+      crescimentoEl.textContent = '—';
+    }
 
     const tbodyUsuario = document.getElementById('relPerUsuarioTabela');
     tbodyUsuario.innerHTML = '';
@@ -1166,6 +1218,31 @@
       tbodyUsuario.appendChild(tr);
     });
     document.getElementById('relPerUsuarioVazio').style.display = usuariosOrdenados.length ? 'none' : 'block';
+  };
+
+  window.exportarCSVPeriodo = function(){
+    if(!ultimoPeriodoLancamentos.length){ toast('Consulta um período primeiro'); return; }
+
+    const linhas = [['Data/Hora','Numero41','ASC Job','Descrição','Motivo','Quem','Forma','Tipo','Valor']];
+    ultimoPeriodoLancamentos.forEach(l => {
+      linhas.push([
+        new Date(l.criado_em).toLocaleString('pt-BR'),
+        l.numero41 || '', l.nosso_numero || '', l.descricao || '',
+        descreverMotivo(l), l.criado_por_email || '', l.forma_pagamento,
+        l.tipo, Number(l.valor).toFixed(2).replace('.', ',')
+      ]);
+    });
+
+    const csv = linhas.map(linha => linha.map(campo => `"${String(campo).replace(/"/g,'""')}"`).join(';')).join('\r\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lancamentos_${document.getElementById('relPerDe').value}_a_${document.getElementById('relPerAte').value}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   window.consultarPendencias = async function(){
