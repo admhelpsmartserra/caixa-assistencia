@@ -330,7 +330,7 @@
       <div class="card">
         <h2>Histórico completo desta ordem</h2>
         <table>
-          <thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Forma</th><th>Valor</th></tr></thead>
+          <thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Forma</th><th>Valor</th><th></th></tr></thead>
           <tbody id="ordemTabelaBody"></tbody>
         </table>
         <div class="empty" id="ordemVazio" style="display:none">Nenhum lançamento registrado nesta ordem ainda.</div>
@@ -825,9 +825,9 @@
 
   window.salvarTaxa = async function(){
     if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
-    const valor = parseFloat(document.getElementById('taxaValor').value);
+    const valor = parseFloat(document.getElementById('taxaValor').value) || 0;
     const status = document.getElementById('taxaStatus').value;
-    if(!valor || valor <= 0){ toast('Preenche o valor da taxa'); return; }
+    if(status === 'paga' && valor <= 0){ toast('Preenche o valor da taxa antes de marcar como paga'); return; }
 
     const { error } = await supabase.from('ordens_financeiras')
       .update({ taxa_analise_valor: valor, taxa_analise_status: status })
@@ -851,9 +851,9 @@
 
   window.salvarOrcamento = async function(){
     if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
-    const valor = parseFloat(document.getElementById('orcValor').value);
+    const valor = parseFloat(document.getElementById('orcValor').value) || 0;
     const status = document.getElementById('orcStatus').value;
-    if(!valor || valor <= 0){ toast('Preenche o valor do orçamento'); return; }
+    if(status === 'pago' && valor <= 0){ toast('Preenche o valor do orçamento antes de marcar como pago'); return; }
 
     const { error } = await supabase.from('ordens_financeiras')
       .update({ orcamento_valor: valor, orcamento_status: status })
@@ -898,6 +898,15 @@
     await renderOrdem(true);
   };
 
+  window.excluirLancamentoOrdem = async function(id){
+    if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
+    if(!confirm('Excluir esse lançamento da ordem? Isso também tira o valor do fechamento de caixa do dia em que foi feito.')) return;
+    const { error } = await supabase.from('lancamentos').delete().eq('id', id);
+    if(error){ toast('Erro ao excluir (confere se seu usuário é master)'); console.error(error); return; }
+    toast('Lançamento excluído');
+    await renderOrdem(true);
+  };
+
   async function renderOrdem(pularAbrirPainel){
     document.getElementById('ordemTitulo').textContent = `41: ${currentOrdem.numero41} · ASC Job: ${currentOrdem.asc_job}`;
     document.getElementById('ordemSub').textContent = 'Criada em ' + new Date(currentOrdem.criado_em).toLocaleString('pt-BR');
@@ -937,6 +946,7 @@
         <td>${l.descricao || '-'}</td>
         <td>${l.forma_pagamento}</td>
         <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
+        <td>${currentUserRole === 'master' ? `<button class="del" onclick="excluirLancamentoOrdem(${l.id})">excluir</button>` : ''}</td>
       `;
       tbody.appendChild(tr);
     });
