@@ -121,19 +121,33 @@
   <!-- ABA: CAIXA DO DIA -->
   <div id="abaCaixa">
     <div class="card">
-      <h2>Resumo de hoje</h2>
+      <h2>Saldo em dinheiro</h2>
+      <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+        Isso é só o dinheiro físico da gaveta. Preenche sozinho com o saldo final de ontem —
+        ajusta manualmente se a contagem física for diferente e clica em Salvar.
+      </p>
       <div class="saldo-row">
         <div>
-          <label>Saldo inicial do dia</label>
+          <label>Saldo em dinheiro (início do dia)</label>
           <input type="number" id="saldoInicial" step="0.01" placeholder="0,00">
         </div>
         <button class="secondary" onclick="salvarSaldoInicial()">Salvar</button>
       </div>
       <div class="grid">
-        <div class="stat"><div class="lbl">Saldo inicial</div><div class="val" id="cardSaldoInicial">R$ 0,00</div></div>
-        <div class="stat pos"><div class="lbl">Entradas</div><div class="val" id="cardEntradas">R$ 0,00</div></div>
-        <div class="stat neg"><div class="lbl">Saídas</div><div class="val" id="cardSaidas">R$ 0,00</div></div>
-        <div class="stat"><div class="lbl">Saldo final</div><div class="val" id="cardSaldoFinal">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Dinheiro (início)</div><div class="val" id="cardSaldoInicial">R$ 0,00</div></div>
+        <div class="stat neg"><div class="lbl">Retirada malote (sangria)</div><div class="val" id="cardSangria">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Dinheiro (final do dia)</div><div class="val" id="cardSaldoFinal">R$ 0,00</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Resumo de hoje (todas as formas de pagamento)</h2>
+      <div class="grid">
+        <div class="stat pos"><div class="lbl">Total de vendas</div><div class="val" id="cardVendas">R$ 0,00</div></div>
+        <div class="stat pos"><div class="lbl">Entradas avulsas (aporte)</div><div class="val" id="cardAporte">R$ 0,00</div></div>
+        <div class="stat pos"><div class="lbl">Total de OS</div><div class="val" id="cardOS">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Faturamento total</div><div class="val" id="cardFaturamento">R$ 0,00</div></div>
+        <div class="stat neg"><div class="lbl">Total de saídas</div><div class="val" id="cardSaidas">R$ 0,00</div></div>
       </div>
       <div class="formas">
         <div class="stat"><div class="lbl">Dinheiro</div><div class="val" id="fDinheiro">R$ 0,00</div></div>
@@ -152,11 +166,17 @@
       <div class="row2">
         <div>
           <label>Tipo</label>
-          <select id="tipo">
+          <select id="tipo" onchange="atualizarOpcoesNatureza()">
             <option value="entrada">Entrada (recebimento)</option>
             <option value="saida">Saída (pagamento/troco)</option>
           </select>
         </div>
+        <div>
+          <label>Natureza</label>
+          <select id="natureza" onchange="onNaturezaChange()"></select>
+        </div>
+      </div>
+      <div class="row2">
         <div>
           <label>Forma de pagamento</label>
           <select id="formaPagamento">
@@ -399,11 +419,23 @@
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
   const hoje = new Date();
-  const hojeISO = hoje.toISOString().slice(0,10);
+  function dataLocalISO(d){
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const dia = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${dia}`;
+  }
+  const hojeISO = dataLocalISO(hoje);
   document.getElementById('dataHoje').textContent = hoje.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
 
   function fmt(v){ return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ','); }
   function inicioDoDia(){ const d = new Date(); d.setHours(0,0,0,0); return d.toISOString(); }
+  function limitesDoDia(diaISO){
+    const [y,m,d] = diaISO.split('-').map(Number);
+    const inicio = new Date(y, m-1, d, 0,0,0,0);
+    const fim = new Date(y, m-1, d, 23,59,59,999);
+    return { inicio: inicio.toISOString(), fim: fim.toISOString() };
+  }
   function toast(msg){
     const t = document.getElementById('toast');
     t.textContent = msg; t.classList.add('show');
@@ -430,6 +462,8 @@
     location.reload();
   };
 
+  let currentUserRole = 'funcionario';
+
   async function mostrarApp(){
     const { data: { session } } = await supabase.auth.getSession();
     if(!session){
@@ -440,6 +474,13 @@
     document.getElementById('loginScreen').classList.add('hidden');
     document.getElementById('appContent').classList.remove('hidden');
     document.getElementById('usuarioLogado').textContent = session.user.email;
+
+    const { data: perfil, error: perfilError } = await supabase
+      .from('perfis').select('role').eq('user_id', session.user.id).maybeSingle();
+    if(perfilError){ console.error(perfilError); }
+    currentUserRole = perfil ? perfil.role : 'funcionario';
+
+    atualizarOpcoesNatureza();
     carregarCaixa();
   }
 
@@ -454,6 +495,30 @@
   };
 
   // ---------- CAIXA DO DIA ----------
+  async function calcularSaldoDinheiroAutomatico(){
+    const { data: ultimoDia } = await supabase
+      .from('saldo_inicial').select('dia, valor')
+      .lt('dia', hojeISO)
+      .order('dia', { ascending: false })
+      .limit(1).maybeSingle();
+
+    if(!ultimoDia) return 0;
+
+    const { inicio, fim } = limitesDoDia(ultimoDia.dia);
+    const { data: lancsDia } = await supabase
+      .from('lancamentos').select('tipo, valor, forma_pagamento')
+      .gte('criado_em', inicio).lte('criado_em', fim);
+
+    let entradasDinheiro = 0, saidasDinheiro = 0;
+    (lancsDia || []).forEach(l => {
+      if(l.forma_pagamento !== 'dinheiro') return;
+      if(l.tipo === 'entrada') entradasDinheiro += Number(l.valor);
+      else saidasDinheiro += Number(l.valor);
+    });
+
+    return Number(ultimoDia.valor) + entradasDinheiro - saidasDinheiro;
+  }
+
   window.salvarSaldoInicial = async function(){
     const valor = parseFloat(document.getElementById('saldoInicial').value) || 0;
     const { error } = await supabase.from('saldo_inicial').upsert({ dia: hojeISO, valor });
@@ -462,9 +527,41 @@
     carregarCaixa();
   };
 
+  // ---------- NATUREZA (venda / aporte / sangria) ----------
+  window.atualizarOpcoesNatureza = function(){
+    const tipo = document.getElementById('tipo').value;
+    const sel = document.getElementById('natureza');
+    if(tipo === 'entrada'){
+      sel.innerHTML = `
+        <option value="venda">Venda (película, acessório...)</option>
+        <option value="aporte">Aporte (reforço de caixa, injeção de dinheiro)</option>
+      `;
+    } else {
+      sel.innerHTML = `
+        <option value="">Saída normal (troco, pagamento)</option>
+        <option value="sangria">Retirada malote (sangria)</option>
+      `;
+    }
+    onNaturezaChange();
+  };
+
+  window.onNaturezaChange = function(){
+    const natureza = document.getElementById('natureza').value;
+    const formaSel = document.getElementById('formaPagamento');
+    if(natureza === 'sangria'){
+      formaSel.value = 'dinheiro';
+      formaSel.disabled = true;
+    } else {
+      formaSel.disabled = false;
+    }
+  };
+
   window.lancar = async function(){
     const tipo = document.getElementById('tipo').value;
-    const formaPagamento = document.getElementById('formaPagamento').value;
+    let natureza = document.getElementById('natureza').value || null;
+    // normaliza 'venda' pra null (é o padrão, não precisa ocupar espaço na coluna)
+    if(natureza === 'venda') natureza = null;
+    const formaPagamento = natureza === 'sangria' ? 'dinheiro' : document.getElementById('formaPagamento').value;
     const valor = parseFloat(document.getElementById('valor').value);
     const descricao = document.getElementById('descricao').value.trim();
 
@@ -472,7 +569,7 @@
 
     const { error } = await supabase.from('lancamentos').insert({
       numero41: null, nosso_numero: null, tipo, forma_pagamento: formaPagamento,
-      valor, descricao
+      valor, descricao, natureza
     });
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
@@ -484,16 +581,17 @@
   };
 
   window.excluir = async function(id){
+    if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
     if(!confirm('Excluir esse lançamento?')) return;
     const { error } = await supabase.from('lancamentos').delete().eq('id', id);
-    if(error){ toast('Erro ao excluir'); console.error(error); return; }
+    if(error){ toast('Erro ao excluir (confere se seu usuário é master)'); console.error(error); return; }
     carregarCaixa();
   };
 
   async function carregarCaixa(){
     const { data: saldoRows } = await supabase.from('saldo_inicial').select('valor').eq('dia', hojeISO).maybeSingle();
-    const saldoInicial = saldoRows ? Number(saldoRows.valor) : 0;
-    document.getElementById('saldoInicial').value = saldoInicial || '';
+    const saldoInicial = saldoRows ? Number(saldoRows.valor) : await calcularSaldoDinheiroAutomatico();
+    document.getElementById('saldoInicial').value = saldoInicial;
 
     const { data: lancamentos, error } = await supabase
       .from('lancamentos').select('*')
@@ -502,14 +600,28 @@
 
     if(error){ console.error(error); return; }
 
-    let entradas = 0, saidas = 0;
+    let vendas = 0, aporte = 0, os = 0, saidasNormais = 0, sangria = 0;
+    let entradasDinheiro = 0, saidasDinheiro = 0;
     const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
     const tbody = document.getElementById('tabelaBody');
     tbody.innerHTML = '';
 
     (lancamentos || []).forEach(l => {
-      if(l.tipo === 'entrada'){ entradas += Number(l.valor); porForma[l.forma_pagamento] += Number(l.valor); }
-      else { saidas += Number(l.valor); porForma[l.forma_pagamento] -= Number(l.valor); }
+      const valor = Number(l.valor);
+      const ehDinheiro = l.forma_pagamento === 'dinheiro';
+
+      if(l.tipo === 'entrada'){
+        porForma[l.forma_pagamento] += valor;
+        if(ehDinheiro) entradasDinheiro += valor;
+        if(l.ordem_id){ os += valor; }
+        else if(l.natureza === 'aporte'){ aporte += valor; }
+        else { vendas += valor; }
+      } else {
+        porForma[l.forma_pagamento] -= valor;
+        if(ehDinheiro) saidasDinheiro += valor;
+        if(l.natureza === 'sangria'){ sangria += valor; }
+        else { saidasNormais += valor; }
+      }
 
       const hora = new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
       const tr = document.createElement('tr');
@@ -519,18 +631,26 @@
         <td>${l.descricao || '-'}</td>
         <td>${l.forma_pagamento}</td>
         <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
-        <td><button class="del" onclick="excluir(${l.id})">excluir</button></td>
+        <td>${currentUserRole === 'master' ? `<button class="del" onclick="excluir(${l.id})">excluir</button>` : ''}</td>
       `;
       tbody.appendChild(tr);
     });
 
     document.getElementById('vazio').style.display = (lancamentos || []).length ? 'none' : 'block';
 
-    const saldoFinal = saldoInicial + entradas - saidas;
+    const faturamentoTotal = vendas + os;
+    const saldoDinheiroFinal = saldoInicial + entradasDinheiro - saidasDinheiro;
+
     document.getElementById('cardSaldoInicial').textContent = fmt(saldoInicial);
-    document.getElementById('cardEntradas').textContent = fmt(entradas);
-    document.getElementById('cardSaidas').textContent = fmt(saidas);
-    document.getElementById('cardSaldoFinal').textContent = fmt(saldoFinal);
+    document.getElementById('cardSangria').textContent = fmt(sangria);
+    document.getElementById('cardSaldoFinal').textContent = fmt(saldoDinheiroFinal);
+
+    document.getElementById('cardVendas').textContent = fmt(vendas);
+    document.getElementById('cardAporte').textContent = fmt(aporte);
+    document.getElementById('cardOS').textContent = fmt(os);
+    document.getElementById('cardFaturamento').textContent = fmt(faturamentoTotal);
+    document.getElementById('cardSaidas').textContent = fmt(saidasNormais);
+
     document.getElementById('fDinheiro').textContent = fmt(porForma.dinheiro);
     document.getElementById('fPix').textContent = fmt(porForma.pix);
     document.getElementById('fCartao').textContent = fmt(porForma.cartao);
