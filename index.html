@@ -198,7 +198,7 @@
       <h2>Lançamentos de hoje</h2>
       <table>
         <thead>
-          <tr><th>Hora</th><th>41 / ASC</th><th>Descrição</th><th>Forma</th><th>Valor</th><th></th></tr>
+          <tr><th>Hora</th><th>41 / ASC</th><th>Descrição</th><th>Motivo</th><th>Quem</th><th>Forma</th><th>Valor</th><th></th></tr>
         </thead>
         <tbody id="tabelaBody"></tbody>
       </table>
@@ -359,7 +359,7 @@
         <div class="stat"><div class="lbl">Cheque</div><div class="val" id="relDiaCheque">R$ 0,00</div></div>
       </div>
       <table>
-        <thead><tr><th>Hora</th><th>41 / ASC</th><th>Descrição</th><th>Forma</th><th>Valor</th></tr></thead>
+        <thead><tr><th>Hora</th><th>41 / ASC</th><th>Descrição</th><th>Motivo</th><th>Quem</th><th>Forma</th><th>Valor</th></tr></thead>
         <tbody id="relDiaTabela"></tbody>
       </table>
       <div class="empty" id="relDiaVazio" style="display:none">Nenhum lançamento nesse dia.</div>
@@ -392,6 +392,20 @@
         <div class="stat"><div class="lbl">Cartão</div><div class="val" id="relPerCartao">R$ 0,00</div></div>
         <div class="stat"><div class="lbl">Cheque</div><div class="val" id="relPerCheque">R$ 0,00</div></div>
       </div>
+      <h3 style="margin-top:20px; margin-bottom:8px; font-size:15px;">Por motivo</h3>
+      <div class="grid">
+        <div class="stat pos"><div class="lbl">Vendas</div><div class="val" id="relPerVendas">R$ 0,00</div></div>
+        <div class="stat pos"><div class="lbl">Aporte de caixa</div><div class="val" id="relPerAporte">R$ 0,00</div></div>
+        <div class="stat pos"><div class="lbl">Ordens de serviço</div><div class="val" id="relPerOS">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Faturamento total</div><div class="val" id="relPerFaturamento">R$ 0,00</div></div>
+        <div class="stat neg"><div class="lbl">Retirada malote (sangria)</div><div class="val" id="relPerSangria">R$ 0,00</div></div>
+      </div>
+      <h3 style="margin-top:20px; margin-bottom:8px; font-size:15px;">Por quem lançou</h3>
+      <table>
+        <thead><tr><th>Login</th><th>Total recebido</th><th>Qtd. lançamentos</th></tr></thead>
+        <tbody id="relPerUsuarioTabela"></tbody>
+      </table>
+      <div class="empty" id="relPerUsuarioVazio" style="display:none">Nenhum lançamento nesse período.</div>
     </div>
 
     <div class="card">
@@ -442,6 +456,18 @@
     setTimeout(()=> t.classList.remove('show'), 2200);
   }
 
+  function descreverMotivo(l){
+    if(l.ordem_id){
+      if(l.categoria === 'taxa_analise') return 'Taxa de análise (OS)';
+      if(l.categoria === 'orcamento_aprovado') return 'Orçamento aprovado (OS)';
+      return 'Avulso de OS';
+    }
+    if(l.tipo === 'entrada'){
+      return l.natureza === 'aporte' ? 'Aporte de caixa' : 'Venda';
+    }
+    return l.natureza === 'sangria' ? 'Retirada malote' : 'Saída normal';
+  }
+
   // ---------- LOGIN ----------
   window.fazerLogin = async function(){
     const email = document.getElementById('loginEmail').value.trim();
@@ -463,6 +489,7 @@
   };
 
   let currentUserRole = 'funcionario';
+  let currentUserEmail = null;
 
   async function mostrarApp(){
     const { data: { session } } = await supabase.auth.getSession();
@@ -474,6 +501,7 @@
     document.getElementById('loginScreen').classList.add('hidden');
     document.getElementById('appContent').classList.remove('hidden');
     document.getElementById('usuarioLogado').textContent = session.user.email;
+    currentUserEmail = session.user.email;
 
     const { data: perfil, error: perfilError } = await supabase
       .from('perfis').select('role').eq('user_id', session.user.id).maybeSingle();
@@ -569,7 +597,7 @@
 
     const { error } = await supabase.from('lancamentos').insert({
       numero41: null, nosso_numero: null, tipo, forma_pagamento: formaPagamento,
-      valor, descricao, natureza
+      valor, descricao, natureza, criado_por_email: currentUserEmail
     });
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
@@ -629,6 +657,8 @@
         <td>${hora}</td>
         <td>${l.numero41 || '-'}${l.nosso_numero ? ' / ' + l.nosso_numero : ''}</td>
         <td>${l.descricao || '-'}</td>
+        <td>${descreverMotivo(l)}</td>
+        <td>${l.criado_por_email || '—'}</td>
         <td>${l.forma_pagamento}</td>
         <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
         <td>${currentUserRole === 'master' ? `<button class="del" onclick="excluir(${l.id})">excluir</button>` : ''}</td>
@@ -721,7 +751,8 @@
       await supabase.from('lancamentos').insert({
         ordem_id: currentOrdem.id, categoria:'taxa_analise', tipo:'entrada',
         forma_pagamento: forma, valor, descricao:'Taxa de análise',
-        numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job
+        numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
+        criado_por_email: currentUserEmail
       });
     }
     toast('Taxa de análise salva');
@@ -745,7 +776,8 @@
       await supabase.from('lancamentos').insert({
         ordem_id: currentOrdem.id, categoria:'orcamento_aprovado', tipo:'entrada',
         forma_pagamento: forma, valor, descricao:'Orçamento aprovado',
-        numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job
+        numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
+        criado_por_email: currentUserEmail
       });
     }
     toast('Orçamento salvo');
@@ -765,7 +797,8 @@
 
     const { error } = await supabase.from('lancamentos').insert({
       ordem_id: currentOrdem.id, categoria:'avulso', tipo, forma_pagamento: forma,
-      valor, descricao, numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job
+      valor, descricao, numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
+      criado_por_email: currentUserEmail
     });
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
@@ -854,6 +887,8 @@
         <td>${hora}</td>
         <td>${l.numero41 || '-'}${l.nosso_numero ? ' / ' + l.nosso_numero : ''}</td>
         <td>${l.descricao || '-'}</td>
+        <td>${descreverMotivo(l)}</td>
+        <td>${l.criado_por_email || '—'}</td>
         <td>${l.forma_pagamento}</td>
         <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
       `;
@@ -886,10 +921,27 @@
     if(error){ toast('Erro ao consultar'); console.error(error); return; }
 
     let entradas = 0, saidas = 0;
+    let vendas = 0, aporte = 0, os = 0, saidasNormais = 0, sangria = 0;
     const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
+    const porUsuario = {};
+
     (lancamentos || []).forEach(l => {
-      if(l.tipo === 'entrada'){ entradas += Number(l.valor); porForma[l.forma_pagamento] += Number(l.valor); }
-      else { saidas += Number(l.valor); porForma[l.forma_pagamento] -= Number(l.valor); }
+      const valor = Number(l.valor);
+      const email = l.criado_por_email || '— (lançamento antigo)';
+      if(!porUsuario[email]) porUsuario[email] = { total: 0, qtd: 0 };
+      porUsuario[email].qtd += 1;
+
+      if(l.tipo === 'entrada'){
+        entradas += valor; porForma[l.forma_pagamento] += valor;
+        porUsuario[email].total += valor;
+        if(l.ordem_id){ os += valor; }
+        else if(l.natureza === 'aporte'){ aporte += valor; }
+        else { vendas += valor; }
+      } else {
+        saidas += valor; porForma[l.forma_pagamento] -= valor;
+        if(l.natureza === 'sangria'){ sangria += valor; }
+        else { saidasNormais += valor; }
+      }
     });
 
     document.getElementById('relPerEntradas').textContent = fmt(entradas);
@@ -900,6 +952,22 @@
     document.getElementById('relPerPix').textContent = fmt(porForma.pix);
     document.getElementById('relPerCartao').textContent = fmt(porForma.cartao);
     document.getElementById('relPerCheque').textContent = fmt(porForma.cheque);
+
+    document.getElementById('relPerVendas').textContent = fmt(vendas);
+    document.getElementById('relPerAporte').textContent = fmt(aporte);
+    document.getElementById('relPerOS').textContent = fmt(os);
+    document.getElementById('relPerFaturamento').textContent = fmt(vendas + os);
+    document.getElementById('relPerSangria').textContent = fmt(sangria);
+
+    const tbodyUsuario = document.getElementById('relPerUsuarioTabela');
+    tbodyUsuario.innerHTML = '';
+    const usuariosOrdenados = Object.entries(porUsuario).sort((a,b) => b[1].total - a[1].total);
+    usuariosOrdenados.forEach(([email, dados]) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${email}</td><td class="valor entrada">${fmt(dados.total)}</td><td>${dados.qtd}</td>`;
+      tbodyUsuario.appendChild(tr);
+    });
+    document.getElementById('relPerUsuarioVazio').style.display = usuariosOrdenados.length ? 'none' : 'block';
   };
 
   window.consultarPendencias = async function(){
