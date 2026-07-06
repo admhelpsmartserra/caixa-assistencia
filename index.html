@@ -229,8 +229,13 @@
           <div>
             <h3 id="ordemTitulo">Ordem</h3>
             <p class="sub" id="ordemSub" style="margin:0"></p>
+            <p class="sub" id="ordemStatusSelo" style="margin:4px 0 0; font-weight:700;"></p>
           </div>
-          <button class="secondary" onclick="fecharOrdem()">Trocar ordem</button>
+          <div style="display:flex; gap:8px;">
+            <button class="secondary" id="btnCancelarOrdem" style="display:none" onclick="cancelarOrdem()">Cancelar ordem</button>
+            <button class="secondary" id="btnReabrirOrdem" style="display:none" onclick="reabrirOrdem()">Reabrir ordem</button>
+            <button class="secondary" onclick="fecharOrdem()">Trocar ordem</button>
+          </div>
         </div>
         <div class="grid">
           <div class="stat"><div class="lbl">Valor esperado</div><div class="val" id="ordemEsperado">R$ 0,00</div></div>
@@ -790,6 +795,27 @@
     document.getElementById('ordemAscJob').value = '';
   };
 
+  window.cancelarOrdem = async function(){
+    if(currentUserRole !== 'master'){ toast('Só master pode cancelar ordem'); return; }
+    if(!confirm('Cancelar essa ordem? Os lançamentos já feitos continuam no histórico normalmente.')) return;
+    const { error } = await supabase.from('ordens_financeiras')
+      .update({ status: 'cancelada' }).eq('id', currentOrdem.id);
+    if(error){ toast('Erro ao cancelar ordem'); console.error(error); return; }
+    currentOrdem.status = 'cancelada';
+    toast('Ordem cancelada');
+    await renderOrdem(true);
+  };
+
+  window.reabrirOrdem = async function(){
+    if(currentUserRole !== 'master'){ toast('Só master pode reabrir ordem'); return; }
+    const { error } = await supabase.from('ordens_financeiras')
+      .update({ status: 'aberta' }).eq('id', currentOrdem.id);
+    if(error){ toast('Erro ao reabrir ordem'); console.error(error); return; }
+    currentOrdem.status = 'aberta';
+    toast('Ordem reaberta');
+    await renderOrdem(true);
+  };
+
   async function jaTemLancamentoCategoria(categoria){
     const { count } = await supabase
       .from('lancamentos').select('id', { count:'exact', head:true })
@@ -798,6 +824,7 @@
   }
 
   window.salvarTaxa = async function(){
+    if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
     const valor = parseFloat(document.getElementById('taxaValor').value);
     const status = document.getElementById('taxaStatus').value;
     if(!valor || valor <= 0){ toast('Preenche o valor da taxa'); return; }
@@ -823,6 +850,7 @@
   };
 
   window.salvarOrcamento = async function(){
+    if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
     const valor = parseFloat(document.getElementById('orcValor').value);
     const status = document.getElementById('orcStatus').value;
     if(!valor || valor <= 0){ toast('Preenche o valor do orçamento'); return; }
@@ -848,6 +876,7 @@
   };
 
   window.lancarAvulsoOrdem = async function(){
+    if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
     const tipo = document.getElementById('avulsoTipo').value;
     const forma = document.getElementById('avulsoForma').value;
     const valor = parseFloat(document.getElementById('avulsoValor').value);
@@ -873,6 +902,15 @@
     document.getElementById('ordemTitulo').textContent = `41: ${currentOrdem.numero41} · ASC Job: ${currentOrdem.asc_job}`;
     document.getElementById('ordemSub').textContent = 'Criada em ' + new Date(currentOrdem.criado_em).toLocaleString('pt-BR');
     document.getElementById('painelOrdem').classList.remove('hidden');
+
+    const cancelada = currentOrdem.status === 'cancelada';
+    const seloEl = document.getElementById('ordemStatusSelo');
+    seloEl.textContent = cancelada ? 'CANCELADA' : '';
+    seloEl.style.color = cancelada ? 'var(--red)' : '';
+
+    const podeGerenciar = currentUserRole === 'master';
+    document.getElementById('btnCancelarOrdem').style.display = (podeGerenciar && !cancelada) ? 'inline-block' : 'none';
+    document.getElementById('btnReabrirOrdem').style.display = (podeGerenciar && cancelada) ? 'inline-block' : 'none';
 
     document.getElementById('taxaValor').value = currentOrdem.taxa_analise_valor || '';
     document.getElementById('taxaStatus').value = currentOrdem.taxa_analise_status || 'pendente';
@@ -1051,7 +1089,7 @@
       const esperado = orcamentoValor > 0 ? orcamentoValor : taxaValor;
       const recebido = recebidoPorOrdem[o.id] || 0;
       return { ...o, esperado, recebido, pendente: esperado - recebido };
-    }).filter(o => o.pendente > 0.01)
+    }).filter(o => o.pendente > 0.01 && o.status !== 'cancelada')
       .sort((a,b) => new Date(a.criado_em) - new Date(b.criado_em));
 
     const tbody = document.getElementById('relPendTabela');
