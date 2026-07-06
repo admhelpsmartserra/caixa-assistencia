@@ -126,13 +126,16 @@
         Isso é só o dinheiro físico da gaveta. Preenche sozinho com o saldo final de ontem —
         ajusta manualmente se a contagem física for diferente e clica em Salvar.
       </p>
-      <div class="saldo-row">
+      <div class="saldo-row" id="blocoEditarSaldoInicial">
         <div>
           <label>Saldo em dinheiro (início do dia)</label>
           <input type="number" id="saldoInicial" step="0.01" placeholder="0,00">
         </div>
         <button class="secondary" onclick="salvarSaldoInicial()">Salvar</button>
       </div>
+      <p class="sub" id="saldoSomenteLeituraAviso" style="display:none;">
+        Só master pode ajustar o saldo em dinheiro. Os valores abaixo são só leitura.
+      </p>
       <div class="grid">
         <div class="stat"><div class="lbl">Dinheiro (início)</div><div class="val" id="cardSaldoInicial">R$ 0,00</div></div>
         <div class="stat neg"><div class="lbl">Retirada malote (sangria)</div><div class="val" id="cardSangria">R$ 0,00</div></div>
@@ -330,7 +333,7 @@
       <div class="card">
         <h2>Histórico completo desta ordem</h2>
         <table>
-          <thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Forma</th><th>Valor</th></tr></thead>
+          <thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Forma</th><th>Valor</th><th></th></tr></thead>
           <tbody id="ordemTabelaBody"></tbody>
         </table>
         <div class="empty" id="ordemVazio" style="display:none">Nenhum lançamento registrado nesta ordem ainda.</div>
@@ -456,6 +459,31 @@
       </table>
       <div class="empty" id="relPendVazio" style="display:none">Nenhuma ordem com saldo pendente.</div>
     </div>
+
+    <div class="card" id="cardLogs" style="display:none">
+      <h2>Logs (só master)</h2>
+      <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+        Registro de quem fez o quê e quando: lançamentos, exclusões, ordens, taxa/orçamento, saldo em dinheiro.
+      </p>
+      <div class="row3">
+        <div>
+          <label>De</label>
+          <input type="date" id="logsDe">
+        </div>
+        <div>
+          <label>Até</label>
+          <input type="date" id="logsAte">
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button style="margin:0" onclick="consultarLogs()">Consultar</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Quando</th><th>Quem</th><th>Ação</th><th>Detalhes</th></tr></thead>
+        <tbody id="logsTabela"></tbody>
+      </table>
+      <div class="empty" id="logsVazio" style="display:none">Nenhum log nesse período.</div>
+    </div>
   </div>
   </div><!-- fecha appContent -->
 </div>
@@ -545,6 +573,12 @@
     const t = document.getElementById('toast');
     t.textContent = msg; t.classList.add('show');
     setTimeout(()=> t.classList.remove('show'), 2200);
+  }
+
+  async function registrarLog(acao, detalhes){
+    try{
+      await supabase.from('logs').insert({ usuario_email: currentUserEmail, acao, detalhes: detalhes || null });
+    } catch(e){ console.error('Erro ao registrar log', e); }
   }
 
   let graficoFaturamento = null;
@@ -660,6 +694,11 @@
     if(perfilError){ console.error(perfilError); }
     currentUserRole = perfil ? perfil.role : 'funcionario';
 
+    const ehMaster = currentUserRole === 'master';
+    document.getElementById('blocoEditarSaldoInicial').style.display = ehMaster ? 'flex' : 'none';
+    document.getElementById('saldoSomenteLeituraAviso').style.display = ehMaster ? 'none' : 'block';
+    document.getElementById('cardLogs').style.display = ehMaster ? 'block' : 'none';
+
     atualizarOpcoesNatureza();
     carregarCaixa();
   }
@@ -704,6 +743,7 @@
     const valor = parseFloat(document.getElementById('saldoInicial').value) || 0;
     const { error } = await supabase.from('saldo_inicial').upsert({ dia: hojeISO, valor });
     if(error){ toast('Erro ao salvar saldo inicial'); console.error(error); return; }
+    await registrarLog('Editou saldo em dinheiro', `Dia ${hojeISO}: R$ ${valor}`);
     toast('Saldo inicial salvo');
     carregarCaixa();
   };
@@ -754,6 +794,8 @@
     });
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
+    await registrarLog('Registrou lançamento avulso', `${tipo} de R$ ${valor} (${descricao}) via ${formaPagamento}`);
+
     document.getElementById('valor').value = '';
     document.getElementById('descricao').value = '';
 
@@ -766,6 +808,7 @@
     if(!confirm('Excluir esse lançamento?')) return;
     const { error } = await supabase.from('lancamentos').delete().eq('id', id);
     if(error){ toast('Erro ao excluir (confere se seu usuário é master)'); console.error(error); return; }
+    await registrarLog('Excluiu lançamento', `Lançamento #${id} (Caixa do dia)`);
     carregarCaixa();
   };
 
@@ -866,6 +909,7 @@
         .from('ordens_financeiras').insert({ numero41, asc_job: ascJob }).select().single();
       if(errIns){ toast('Erro ao criar ordem'); console.error(errIns); return; }
       existente = nova;
+      await registrarLog('Criou ordem financeira', `41: ${numero41} / ASC Job: ${ascJob}`);
       toast('Ordem criada');
     } else {
       toast('Ordem encontrada');
@@ -889,6 +933,7 @@
       .update({ status: 'cancelada' }).eq('id', currentOrdem.id);
     if(error){ toast('Erro ao cancelar ordem'); console.error(error); return; }
     currentOrdem.status = 'cancelada';
+    await registrarLog('Cancelou ordem', `41: ${currentOrdem.numero41} / ASC Job: ${currentOrdem.asc_job}`);
     toast('Ordem cancelada');
     await renderOrdem(true);
   };
@@ -899,6 +944,7 @@
       .update({ status: 'aberta' }).eq('id', currentOrdem.id);
     if(error){ toast('Erro ao reabrir ordem'); console.error(error); return; }
     currentOrdem.status = 'aberta';
+    await registrarLog('Reabriu ordem', `41: ${currentOrdem.numero41} / ASC Job: ${currentOrdem.asc_job}`);
     toast('Ordem reaberta');
     await renderOrdem(true);
   };
@@ -912,9 +958,9 @@
 
   window.salvarTaxa = async function(){
     if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
-    const valor = parseFloat(document.getElementById('taxaValor').value);
+    const valor = parseFloat(document.getElementById('taxaValor').value) || 0;
     const status = document.getElementById('taxaStatus').value;
-    if(!valor || valor <= 0){ toast('Preenche o valor da taxa'); return; }
+    if(status === 'paga' && valor <= 0){ toast('Preenche o valor da taxa antes de marcar como paga'); return; }
 
     const { error } = await supabase.from('ordens_financeiras')
       .update({ taxa_analise_valor: valor, taxa_analise_status: status })
@@ -930,6 +976,7 @@
         criado_por_email: currentUserEmail
       });
     }
+    await registrarLog('Salvou taxa de análise', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: R$ ${valor} (${status})`);
     toast('Taxa de análise salva');
     currentOrdem.taxa_analise_valor = valor;
     currentOrdem.taxa_analise_status = status;
@@ -938,9 +985,9 @@
 
   window.salvarOrcamento = async function(){
     if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
-    const valor = parseFloat(document.getElementById('orcValor').value);
+    const valor = parseFloat(document.getElementById('orcValor').value) || 0;
     const status = document.getElementById('orcStatus').value;
-    if(!valor || valor <= 0){ toast('Preenche o valor do orçamento'); return; }
+    if(status === 'pago' && valor <= 0){ toast('Preenche o valor do orçamento antes de marcar como pago'); return; }
 
     const { error } = await supabase.from('ordens_financeiras')
       .update({ orcamento_valor: valor, orcamento_status: status })
@@ -956,6 +1003,7 @@
         criado_por_email: currentUserEmail
       });
     }
+    await registrarLog('Salvou orçamento', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: R$ ${valor} (${status})`);
     toast('Orçamento salvo');
     currentOrdem.orcamento_valor = valor;
     currentOrdem.orcamento_status = status;
@@ -979,9 +1027,21 @@
     });
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
+    await registrarLog('Lançamento avulso na ordem', `${tipo} de R$ ${valor} (${descricao}) na ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}`);
+
     document.getElementById('avulsoValor').value = '';
     document.getElementById('avulsoDescricao').value = '';
     toast('Lançamento avulso registrado');
+    await renderOrdem(true);
+  };
+
+  window.excluirLancamentoOrdem = async function(id){
+    if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
+    if(!confirm('Excluir esse lançamento da ordem? Isso também tira o valor do fechamento de caixa do dia em que foi feito.')) return;
+    const { error } = await supabase.from('lancamentos').delete().eq('id', id);
+    if(error){ toast('Erro ao excluir (confere se seu usuário é master)'); console.error(error); return; }
+    await registrarLog('Excluiu lançamento', `Lançamento #${id} da ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}`);
+    toast('Lançamento excluído');
     await renderOrdem(true);
   };
 
@@ -1024,6 +1084,7 @@
         <td>${l.descricao || '-'}</td>
         <td>${l.forma_pagamento}</td>
         <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
+        <td>${currentUserRole === 'master' ? `<button class="del" onclick="excluirLancamentoOrdem(${l.id})">excluir</button>` : ''}</td>
       `;
       tbody.appendChild(tr);
     });
@@ -1043,6 +1104,8 @@
   function fimDia(dateStr){ const d = inicioDia(dateStr); d.setDate(d.getDate() + 1); return d; }
 
   document.getElementById('relDia').value = hojeISO;
+  document.getElementById('logsAte').value = hojeISO;
+  document.getElementById('logsDe').value = dataLocalISO(new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 6));
 
   window.consultarFechamentoDia = async function(){
     const dia = document.getElementById('relDia').value;
@@ -1243,6 +1306,35 @@
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  window.consultarLogs = async function(){
+    if(currentUserRole !== 'master'){ toast('Só master pode ver os logs'); return; }
+    const de = document.getElementById('logsDe').value;
+    const ate = document.getElementById('logsAte').value;
+    if(!de || !ate){ toast('Escolhe as duas datas'); return; }
+
+    const { data: logs, error } = await supabase
+      .from('logs').select('*')
+      .gte('criado_em', inicioDia(de).toISOString())
+      .lt('criado_em', fimDia(ate).toISOString())
+      .order('criado_em', { ascending:false });
+
+    if(error){ toast('Erro ao consultar logs'); console.error(error); return; }
+
+    const tbody = document.getElementById('logsTabela');
+    tbody.innerHTML = '';
+    (logs || []).forEach(l => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${new Date(l.criado_em).toLocaleString('pt-BR')}</td>
+        <td>${l.usuario_email || '—'}</td>
+        <td>${l.acao}</td>
+        <td>${l.detalhes || '-'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('logsVazio').style.display = (logs || []).length ? 'none' : 'block';
   };
 
   window.consultarPendencias = async function(){
