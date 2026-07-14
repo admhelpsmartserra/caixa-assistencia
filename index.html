@@ -1008,11 +1008,21 @@
         escolhida = candidatas.find(o => o.numero41 === numero41 && o.asc_job === ascJob);
       }
 
-      if(!escolhida){
-        if(candidatas.length > 1){
-          toast('Encontrei mais de uma ordem parecida — preenche os dois campos certinho pra eu saber qual abrir');
+      if(!escolhida && candidatas.length > 1){
+        // se sobrar mais de uma, prioriza as ativas — uma cancelada não deveria "empatar" numa busca normal
+        const ativas = candidatas.filter(o => o.status !== 'cancelada');
+        if(ativas.length === 1){
+          escolhida = ativas[0];
+        } else if(ativas.length > 1){
+          toast('Encontrei mais de uma ordem ativa parecida — preenche os dois campos certinho pra eu saber qual abrir');
+          return;
+        } else {
+          toast('Só encontrei ordens canceladas com esse dado — preenche os dois campos certinho pra abrir uma delas');
           return;
         }
+      }
+
+      if(!escolhida){
         const encontrada = candidatas[0];
         if(numero41 && ascJob){
           // os dois campos foram preenchidos, mas não bateram juntos com nenhuma ordem = conflito
@@ -1020,7 +1030,7 @@
           const campoDivergente = encontrada.numero41 === numero41
             ? `ASC Job (salvo: ${encontrada.asc_job}, você digitou: ${ascJob})`
             : `número 41 (salvo: ${encontrada.numero41}, você digitou: ${numero41})`;
-          if(!confirm(`Já existe uma ordem com esse ${campoBatendo}, mas o ${campoDivergente} é diferente.\n\nAbrir a ordem já existente (${encontrada.numero41} / ${encontrada.asc_job}) em vez de criar uma nova?`)) return;
+          if(!confirm(`Já existe uma ordem com esse ${campoBatendo}, mas o ${campoDivergente} é diferente.${encontrada.status === 'cancelada' ? ' Essa ordem está CANCELADA.' : ''}\n\nAbrir a ordem já existente (${encontrada.numero41} / ${encontrada.asc_job}) em vez de criar uma nova?`)) return;
         }
         escolhida = encontrada;
       }
