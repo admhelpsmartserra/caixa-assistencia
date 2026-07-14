@@ -747,16 +747,8 @@
   };
 
   // ---------- CAIXA DO DIA ----------
-  async function calcularSaldoDinheiroAutomatico(){
-    const { data: ultimoDia } = await supabase
-      .from('saldo_inicial').select('dia, valor')
-      .lt('dia', hojeISO)
-      .order('dia', { ascending: false })
-      .limit(1).maybeSingle();
-
-    if(!ultimoDia) return 0;
-
-    const { inicio, fim } = limitesDoDia(ultimoDia.dia);
+  async function somaDinheiroDoDia(diaISO){
+    const { inicio, fim } = limitesDoDia(diaISO);
     const { data: lancsDia } = await supabase
       .from('lancamentos').select('tipo, valor, forma_pagamento')
       .gte('criado_em', inicio).lte('criado_em', fim);
@@ -767,8 +759,36 @@
       if(l.tipo === 'entrada') entradasDinheiro += Number(l.valor);
       else saidasDinheiro += Number(l.valor);
     });
+    return { entradasDinheiro, saidasDinheiro };
+  }
 
-    return Number(ultimoDia.valor) + entradasDinheiro - saidasDinheiro;
+  // Calcula o saldo em dinheiro no INÍCIO do diaAlvoISO, andando dia a dia desde
+  // o último dia que teve saldo salvo (não pula direto pro dia anterior — cobre
+  // qualquer quantidade de dias sem "Salvar" no meio do caminho).
+  async function calcularSaldoAcumuladoAte(diaAlvoISO){
+    const { data: ultimoDia } = await supabase
+      .from('saldo_inicial').select('dia, valor')
+      .lt('dia', diaAlvoISO)
+      .order('dia', { ascending: false })
+      .limit(1).maybeSingle();
+
+    if(!ultimoDia) return 0;
+
+    let saldoAtual = Number(ultimoDia.valor);
+    let diaAtual = ultimoDia.dia;
+
+    while(diaAtual < diaAlvoISO){
+      const { entradasDinheiro, saidasDinheiro } = await somaDinheiroDoDia(diaAtual);
+      saldoAtual = saldoAtual + entradasDinheiro - saidasDinheiro;
+      const [y,m,d] = diaAtual.split('-').map(Number);
+      diaAtual = dataLocalISO(new Date(y, m-1, d+1));
+    }
+
+    return saldoAtual;
+  }
+
+  async function calcularSaldoDinheiroAutomatico(){
+    return calcularSaldoAcumuladoAte(hojeISO);
   }
 
   function diaDoInputRetroativo(inputId){
@@ -777,26 +797,21 @@
   }
 
   async function recalcularSaldoAPartirDe(diaAlteradoISO){
+    // Se esse dia específico nunca teve saldo salvo, calcula a base andando
+    // desde o último dia salvo antes dele (em vez de desistir).
+    let saldoAtual;
     const { data: base } = await supabase.from('saldo_inicial').select('valor').eq('dia', diaAlteradoISO).maybeSingle();
-    if(!base) return []; // esse dia nunca teve saldo salvo — não tem base pra propagar, vai calcular sozinho quando alguém abrir
+    if(base){
+      saldoAtual = Number(base.valor);
+    } else {
+      saldoAtual = await calcularSaldoAcumuladoAte(diaAlteradoISO);
+    }
 
-    let saldoAtual = Number(base.valor);
     let diaAtual = diaAlteradoISO;
     const diasAtualizados = [];
 
     while(diaAtual < hojeISO){
-      const { inicio, fim } = limitesDoDia(diaAtual);
-      const { data: lancsDia } = await supabase
-        .from('lancamentos').select('tipo, valor, forma_pagamento')
-        .gte('criado_em', inicio).lte('criado_em', fim);
-
-      let entradasDinheiro = 0, saidasDinheiro = 0;
-      (lancsDia || []).forEach(l => {
-        if(l.forma_pagamento !== 'dinheiro') return;
-        if(l.tipo === 'entrada') entradasDinheiro += Number(l.valor);
-        else saidasDinheiro += Number(l.valor);
-      });
-
+      const { entradasDinheiro, saidasDinheiro } = await somaDinheiroDoDia(diaAtual);
       const saldoFinalDia = saldoAtual + entradasDinheiro - saidasDinheiro;
 
       const [y,m,d] = diaAtual.split('-').map(Number);
@@ -1274,7 +1289,7 @@
     if(!dia){ toast('Escolhe uma data'); return; }
 
     const { data: saldoRows } = await supabase.from('saldo_inicial').select('valor').eq('dia', dia).maybeSingle();
-    const saldoInicial = saldoRows ? Number(saldoRows.valor) : 0;
+    const saldoInicial = saldoRows ? Number(saldoRows.valor) : await calcularSaldoAcumuladoAte(dia);
 
     const { data: lancamentos, error } = await supabase
       .from('lancamentos').select('*')
