@@ -194,6 +194,10 @@
       <input type="number" id="valor" step="0.01" placeholder="0,00">
       <label>Descrição</label>
       <input type="text" id="descricao" placeholder="Ex: película, adiantamento, troco...">
+      <div id="blocoDataRetroativa" style="display:none">
+        <label>Data/hora do lançamento (deixe em branco = agora)</label>
+        <input type="datetime-local" id="dataRetroativa">
+      </div>
       <button onclick="lancar()">Registrar lançamento</button>
     </div>
 
@@ -271,6 +275,10 @@
             </select>
           </div>
         </div>
+        <div id="blocoDataRetroativaTaxa" style="display:none">
+          <label>Data/hora do pagamento (deixe em branco = agora)</label>
+          <input type="datetime-local" id="dataRetroativaTaxa">
+        </div>
         <button class="secondary" onclick="salvarTaxa()">Salvar taxa de análise</button>
       </div>
 
@@ -297,6 +305,10 @@
               <option value="cheque">Cheque</option>
             </select>
           </div>
+        </div>
+        <div id="blocoDataRetroativaOrc" style="display:none">
+          <label>Data/hora do pagamento (deixe em branco = agora)</label>
+          <input type="datetime-local" id="dataRetroativaOrc">
         </div>
         <button class="secondary" onclick="salvarOrcamento()">Salvar orçamento aprovado</button>
       </div>
@@ -327,6 +339,10 @@
         </div>
         <label>Descrição (obrigatória)</label>
         <input type="text" id="avulsoDescricao" placeholder="Ex: adiantamento do cliente">
+        <div id="blocoDataRetroativaAvulso" style="display:none">
+          <label>Data/hora do lançamento (deixe em branco = agora)</label>
+          <input type="datetime-local" id="dataRetroativaAvulso">
+        </div>
         <button onclick="lancarAvulsoOrdem()">Registrar lançamento avulso</button>
       </div>
 
@@ -520,6 +536,15 @@
     return { inicio: inicio.toISOString(), fim: fim.toISOString() };
   }
 
+  function dataRetroativaISO(inputId){
+    const valor = document.getElementById(inputId).value;
+    if(!valor) return null;
+    const [dataParte, horaParte] = valor.split('T');
+    const [y,m,d] = dataParte.split('-').map(Number);
+    const [h,min] = horaParte.split(':').map(Number);
+    return new Date(y, m-1, d, h, min, 0, 0).toISOString();
+  }
+
   function calcularIntervaloAtalho(tipo){
     const hoje = new Date();
     const y = hoje.getFullYear(), m = hoje.getMonth(), d = hoje.getDate();
@@ -698,6 +723,10 @@
     document.getElementById('blocoEditarSaldoInicial').style.display = ehMaster ? 'flex' : 'none';
     document.getElementById('saldoSomenteLeituraAviso').style.display = ehMaster ? 'none' : 'block';
     document.getElementById('cardLogs').style.display = ehMaster ? 'block' : 'none';
+    document.getElementById('blocoDataRetroativa').style.display = ehMaster ? 'block' : 'none';
+    document.getElementById('blocoDataRetroativaTaxa').style.display = ehMaster ? 'block' : 'none';
+    document.getElementById('blocoDataRetroativaOrc').style.display = ehMaster ? 'block' : 'none';
+    document.getElementById('blocoDataRetroativaAvulso').style.display = ehMaster ? 'block' : 'none';
 
     atualizarOpcoesNatureza();
     carregarCaixa();
@@ -785,19 +814,24 @@
     const formaPagamento = natureza === 'sangria' ? 'dinheiro' : document.getElementById('formaPagamento').value;
     const valor = parseFloat(document.getElementById('valor').value);
     const descricao = document.getElementById('descricao').value.trim();
+    const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativa') : null;
 
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
 
-    const { error } = await supabase.from('lancamentos').insert({
+    const payload = {
       numero41: null, nosso_numero: null, tipo, forma_pagamento: formaPagamento,
       valor, descricao, natureza, criado_por_email: currentUserEmail
-    });
+    };
+    if(dataRetroativa) payload.criado_em = dataRetroativa;
+
+    const { error } = await supabase.from('lancamentos').insert(payload);
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
-    await registrarLog('Registrou lançamento avulso', `${tipo} de R$ ${valor} (${descricao}) via ${formaPagamento}`);
+    await registrarLog('Registrou lançamento avulso', `${tipo} de R$ ${valor} (${descricao}) via ${formaPagamento}${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
 
     document.getElementById('valor').value = '';
     document.getElementById('descricao').value = '';
+    document.getElementById('dataRetroativa').value = '';
 
     toast('Lançamento registrado');
     carregarCaixa();
@@ -961,6 +995,7 @@
     const valor = parseFloat(document.getElementById('taxaValor').value) || 0;
     const status = document.getElementById('taxaStatus').value;
     if(status === 'paga' && valor <= 0){ toast('Preenche o valor da taxa antes de marcar como paga'); return; }
+    const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativaTaxa') : null;
 
     const { error } = await supabase.from('ordens_financeiras')
       .update({ taxa_analise_valor: valor, taxa_analise_status: status })
@@ -969,17 +1004,20 @@
 
     if(status === 'paga' && !(await jaTemLancamentoCategoria('taxa_analise'))){
       const forma = document.getElementById('taxaForma').value;
-      await supabase.from('lancamentos').insert({
+      const payload = {
         ordem_id: currentOrdem.id, categoria:'taxa_analise', tipo:'entrada',
         forma_pagamento: forma, valor, descricao:'Taxa de análise',
         numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
         criado_por_email: currentUserEmail
-      });
+      };
+      if(dataRetroativa) payload.criado_em = dataRetroativa;
+      await supabase.from('lancamentos').insert(payload);
     }
-    await registrarLog('Salvou taxa de análise', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: R$ ${valor} (${status})`);
+    await registrarLog('Salvou taxa de análise', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: R$ ${valor} (${status})${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
     toast('Taxa de análise salva');
     currentOrdem.taxa_analise_valor = valor;
     currentOrdem.taxa_analise_status = status;
+    document.getElementById('dataRetroativaTaxa').value = '';
     await renderOrdem(true);
   };
 
@@ -988,6 +1026,7 @@
     const valor = parseFloat(document.getElementById('orcValor').value) || 0;
     const status = document.getElementById('orcStatus').value;
     if(status === 'pago' && valor <= 0){ toast('Preenche o valor do orçamento antes de marcar como pago'); return; }
+    const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativaOrc') : null;
 
     const { error } = await supabase.from('ordens_financeiras')
       .update({ orcamento_valor: valor, orcamento_status: status })
@@ -996,17 +1035,20 @@
 
     if(status === 'pago' && !(await jaTemLancamentoCategoria('orcamento_aprovado'))){
       const forma = document.getElementById('orcForma').value;
-      await supabase.from('lancamentos').insert({
+      const payload = {
         ordem_id: currentOrdem.id, categoria:'orcamento_aprovado', tipo:'entrada',
         forma_pagamento: forma, valor, descricao:'Orçamento aprovado',
         numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
         criado_por_email: currentUserEmail
-      });
+      };
+      if(dataRetroativa) payload.criado_em = dataRetroativa;
+      await supabase.from('lancamentos').insert(payload);
     }
-    await registrarLog('Salvou orçamento', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: R$ ${valor} (${status})`);
+    await registrarLog('Salvou orçamento', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: R$ ${valor} (${status})${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
     toast('Orçamento salvo');
     currentOrdem.orcamento_valor = valor;
     currentOrdem.orcamento_status = status;
+    document.getElementById('dataRetroativaOrc').value = '';
     await renderOrdem(true);
   };
 
@@ -1016,21 +1058,26 @@
     const forma = document.getElementById('avulsoForma').value;
     const valor = parseFloat(document.getElementById('avulsoValor').value);
     const descricao = document.getElementById('avulsoDescricao').value.trim();
+    const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativaAvulso') : null;
 
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
     if(!descricao){ toast('Descrição é obrigatória nesse tipo de lançamento'); return; }
 
-    const { error } = await supabase.from('lancamentos').insert({
+    const payload = {
       ordem_id: currentOrdem.id, categoria:'avulso', tipo, forma_pagamento: forma,
       valor, descricao, numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
       criado_por_email: currentUserEmail
-    });
+    };
+    if(dataRetroativa) payload.criado_em = dataRetroativa;
+
+    const { error } = await supabase.from('lancamentos').insert(payload);
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
-    await registrarLog('Lançamento avulso na ordem', `${tipo} de R$ ${valor} (${descricao}) na ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}`);
+    await registrarLog('Lançamento avulso na ordem', `${tipo} de R$ ${valor} (${descricao}) na ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
 
     document.getElementById('avulsoValor').value = '';
     document.getElementById('avulsoDescricao').value = '';
+    document.getElementById('dataRetroativaAvulso').value = '';
     toast('Lançamento avulso registrado');
     await renderOrdem(true);
   };
