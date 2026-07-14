@@ -217,6 +217,9 @@
   <div id="abaOrdem" class="hidden">
     <div class="card">
       <h2>Abrir ou criar ordem financeira</h2>
+      <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+        Pra buscar uma ordem que já existe, basta preencher um dos campos. Pra criar uma nova, preenche os dois.
+      </p>
       <div class="row2">
         <div>
           <label>Número 41</label>
@@ -987,26 +990,58 @@
   window.abrirOrdem = async function(){
     const numero41 = document.getElementById('ordemNumero41').value.trim();
     const ascJob = document.getElementById('ordemAscJob').value.trim();
-    if(!numero41 || !ascJob){ toast('Preenche número 41 e ASC Job'); return; }
 
-    let { data: existente, error } = await supabase
-      .from('ordens_financeiras').select('*')
-      .eq('numero41', numero41).eq('asc_job', ascJob).maybeSingle();
+    if(!numero41 && !ascJob){ toast('Preenche pelo menos o número 41 ou o ASC Job'); return; }
 
+    const condicoes = [];
+    if(numero41) condicoes.push(`numero41.eq.${numero41}`);
+    if(ascJob) condicoes.push(`asc_job.eq.${ascJob}`);
+
+    const { data: candidatas, error } = await supabase
+      .from('ordens_financeiras').select('*').or(condicoes.join(','));
     if(error){ toast('Erro ao buscar ordem'); console.error(error); return; }
 
-    if(!existente){
-      const { data: nova, error: errIns } = await supabase
-        .from('ordens_financeiras').insert({ numero41, asc_job: ascJob }).select().single();
-      if(errIns){ toast('Erro ao criar ordem'); console.error(errIns); return; }
-      existente = nova;
-      await registrarLog('Criou ordem financeira', `41: ${numero41} / ASC Job: ${ascJob}`);
-      toast('Ordem criada');
-    } else {
+    if(candidatas && candidatas.length){
+      let escolhida = null;
+
+      if(numero41 && ascJob){
+        escolhida = candidatas.find(o => o.numero41 === numero41 && o.asc_job === ascJob);
+      }
+
+      if(!escolhida){
+        if(candidatas.length > 1){
+          toast('Encontrei mais de uma ordem parecida — preenche os dois campos certinho pra eu saber qual abrir');
+          return;
+        }
+        const encontrada = candidatas[0];
+        if(numero41 && ascJob){
+          // os dois campos foram preenchidos, mas não bateram juntos com nenhuma ordem = conflito
+          const campoBatendo = encontrada.numero41 === numero41 ? 'número 41' : 'ASC Job';
+          const campoDivergente = encontrada.numero41 === numero41
+            ? `ASC Job (salvo: ${encontrada.asc_job}, você digitou: ${ascJob})`
+            : `número 41 (salvo: ${encontrada.numero41}, você digitou: ${numero41})`;
+          if(!confirm(`Já existe uma ordem com esse ${campoBatendo}, mas o ${campoDivergente} é diferente.\n\nAbrir a ordem já existente (${encontrada.numero41} / ${encontrada.asc_job}) em vez de criar uma nova?`)) return;
+        }
+        escolhida = encontrada;
+      }
+
+      currentOrdem = escolhida;
+      document.getElementById('ordemNumero41').value = escolhida.numero41;
+      document.getElementById('ordemAscJob').value = escolhida.asc_job;
       toast('Ordem encontrada');
+      await renderOrdem();
+      return;
     }
 
-    currentOrdem = existente;
+    if(!numero41 || !ascJob){ toast('Não achei nenhuma ordem. Pra criar uma nova, preenche os dois campos (número 41 e ASC Job)'); return; }
+
+    const { data: nova, error: errIns } = await supabase
+      .from('ordens_financeiras').insert({ numero41, asc_job: ascJob }).select().single();
+    if(errIns){ toast('Erro ao criar ordem'); console.error(errIns); return; }
+
+    await registrarLog('Criou ordem financeira', `41: ${numero41} / ASC Job: ${ascJob}`);
+    currentOrdem = nova;
+    toast('Ordem criada');
     await renderOrdem();
   };
 
