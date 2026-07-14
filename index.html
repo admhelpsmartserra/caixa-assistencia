@@ -768,6 +768,59 @@
     return Number(ultimoDia.valor) + entradasDinheiro - saidasDinheiro;
   }
 
+  function diaDoInputRetroativo(inputId){
+    const valor = document.getElementById(inputId).value;
+    return valor ? valor.split('T')[0] : null;
+  }
+
+  async function recalcularSaldoAPartirDe(diaAlteradoISO){
+    const { data: base } = await supabase.from('saldo_inicial').select('valor').eq('dia', diaAlteradoISO).maybeSingle();
+    if(!base) return []; // esse dia nunca teve saldo salvo — não tem base pra propagar, vai calcular sozinho quando alguém abrir
+
+    let saldoAtual = Number(base.valor);
+    let diaAtual = diaAlteradoISO;
+    const diasAtualizados = [];
+
+    while(diaAtual < hojeISO){
+      const { inicio, fim } = limitesDoDia(diaAtual);
+      const { data: lancsDia } = await supabase
+        .from('lancamentos').select('tipo, valor, forma_pagamento')
+        .gte('criado_em', inicio).lte('criado_em', fim);
+
+      let entradasDinheiro = 0, saidasDinheiro = 0;
+      (lancsDia || []).forEach(l => {
+        if(l.forma_pagamento !== 'dinheiro') return;
+        if(l.tipo === 'entrada') entradasDinheiro += Number(l.valor);
+        else saidasDinheiro += Number(l.valor);
+      });
+
+      const saldoFinalDia = saldoAtual + entradasDinheiro - saidasDinheiro;
+
+      const [y,m,d] = diaAtual.split('-').map(Number);
+      const proximoISO = dataLocalISO(new Date(y, m-1, d+1));
+
+      await supabase.from('saldo_inicial').upsert({ dia: proximoISO, valor: saldoFinalDia });
+      diasAtualizados.push(proximoISO);
+
+      saldoAtual = saldoFinalDia;
+      diaAtual = proximoISO;
+    }
+
+    return diasAtualizados;
+  }
+
+  async function cascatearSaldoDinheiro(diaAlteradoISO){
+    if(!confirm(`Esse lançamento é em dinheiro com data retroativa. Quer recalcular automaticamente o saldo em dinheiro de todos os dias entre ${diaAlteradoISO} e hoje, como numa planilha?\n\nIsso vai sobrescrever qualquer ajuste manual que já exista nesses dias.`)) return;
+    const atualizados = await recalcularSaldoAPartirDe(diaAlteradoISO);
+    if(!atualizados.length){
+      toast('Esse dia nunca teve saldo salvo — vai calcular sozinho quando alguém abrir aquele dia');
+    } else {
+      toast(`Saldo em dinheiro recalculado em ${atualizados.length} dia(s), até hoje`);
+    }
+    await registrarLog('Recalculou saldo em dinheiro (cascata)', `A partir de ${diaAlteradoISO}, ${atualizados.length} dia(s) atualizados`);
+    carregarCaixa();
+  }
+
   window.salvarSaldoInicial = async function(){
     const valor = parseFloat(document.getElementById('saldoInicial').value) || 0;
     const { error } = await supabase.from('saldo_inicial').upsert({ dia: hojeISO, valor });
@@ -829,11 +882,15 @@
 
     await registrarLog('Registrou lançamento avulso', `${tipo} de R$ ${valor} (${descricao}) via ${formaPagamento}${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
 
+    const diaAlterado = diaDoInputRetroativo('dataRetroativa');
     document.getElementById('valor').value = '';
     document.getElementById('descricao').value = '';
     document.getElementById('dataRetroativa').value = '';
-
     toast('Lançamento registrado');
+
+    if(dataRetroativa && formaPagamento === 'dinheiro'){
+      await cascatearSaldoDinheiro(diaAlterado);
+    }
     carregarCaixa();
   };
 
@@ -1012,6 +1069,10 @@
       };
       if(dataRetroativa) payload.criado_em = dataRetroativa;
       await supabase.from('lancamentos').insert(payload);
+
+      if(dataRetroativa && forma === 'dinheiro'){
+        await cascatearSaldoDinheiro(diaDoInputRetroativo('dataRetroativaTaxa'));
+      }
     }
     await registrarLog('Salvou taxa de análise', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: R$ ${valor} (${status})${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
     toast('Taxa de análise salva');
@@ -1043,6 +1104,10 @@
       };
       if(dataRetroativa) payload.criado_em = dataRetroativa;
       await supabase.from('lancamentos').insert(payload);
+
+      if(dataRetroativa && forma === 'dinheiro'){
+        await cascatearSaldoDinheiro(diaDoInputRetroativo('dataRetroativaOrc'));
+      }
     }
     await registrarLog('Salvou orçamento', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: R$ ${valor} (${status})${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
     toast('Orçamento salvo');
@@ -1075,9 +1140,14 @@
 
     await registrarLog('Lançamento avulso na ordem', `${tipo} de R$ ${valor} (${descricao}) na ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
 
+    const diaAlterado = diaDoInputRetroativo('dataRetroativaAvulso');
     document.getElementById('avulsoValor').value = '';
     document.getElementById('avulsoDescricao').value = '';
     document.getElementById('dataRetroativaAvulso').value = '';
+
+    if(dataRetroativa && forma === 'dinheiro'){
+      await cascatearSaldoDinheiro(diaAlterado);
+    }
     toast('Lançamento avulso registrado');
     await renderOrdem(true);
   };
