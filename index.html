@@ -218,7 +218,7 @@
     <div class="card">
       <h2>Abrir ou criar ordem financeira</h2>
       <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
-        Pra buscar uma ordem que já existe, basta preencher um dos campos. Pra criar uma nova, preenche os dois.
+        Pra buscar uma ordem que já existe, basta preencher um dos campos. Pra criar uma nova, o ASC Job é obrigatório — o número 41 pode ficar em branco e ser preenchido depois.
       </p>
       <div class="row2">
         <div>
@@ -242,9 +242,26 @@
             <p class="sub" id="ordemStatusSelo" style="margin:4px 0 0; font-weight:700;"></p>
           </div>
           <div style="display:flex; gap:8px;">
+            <button class="secondary" onclick="mostrarEdicaoOrdem()">Editar 41/ASC</button>
             <button class="secondary" id="btnCancelarOrdem" style="display:none" onclick="cancelarOrdem()">Cancelar ordem</button>
             <button class="secondary" id="btnReabrirOrdem" style="display:none" onclick="reabrirOrdem()">Reabrir ordem</button>
             <button class="secondary" onclick="fecharOrdem()">Trocar ordem</button>
+          </div>
+        </div>
+        <div id="blocoEdicaoOrdem" class="hidden" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+          <div class="row2">
+            <div>
+              <label>Número 41 (pode ficar em branco)</label>
+              <input type="text" id="editNumero41" placeholder="4175875755">
+            </div>
+            <div>
+              <label>ASC Job</label>
+              <input type="text" id="editAscJob" placeholder="OR1051">
+            </div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button style="margin:0" onclick="salvarEdicaoOrdem()">Salvar</button>
+            <button class="secondary" style="margin:0" onclick="esconderEdicaoOrdem()">Cancelar edição</button>
           </div>
         </div>
         <div class="grid">
@@ -1051,20 +1068,20 @@
       }
 
       currentOrdem = escolhida;
-      document.getElementById('ordemNumero41').value = escolhida.numero41;
+      document.getElementById('ordemNumero41').value = escolhida.numero41 || '';
       document.getElementById('ordemAscJob').value = escolhida.asc_job;
       toast('Ordem encontrada');
       await renderOrdem();
       return;
     }
 
-    if(!numero41 || !ascJob){ toast('Não achei nenhuma ordem. Pra criar uma nova, preenche os dois campos (número 41 e ASC Job)'); return; }
+    if(!ascJob){ toast('Pra criar uma ordem nova, o ASC Job é obrigatório (o número 41 pode ficar em branco e ser preenchido depois)'); return; }
 
     const { data: nova, error: errIns } = await supabase
-      .from('ordens_financeiras').insert({ numero41, asc_job: ascJob }).select().single();
+      .from('ordens_financeiras').insert({ numero41: numero41 || null, asc_job: ascJob }).select().single();
     if(errIns){ toast('Erro ao criar ordem'); console.error(errIns); return; }
 
-    await registrarLog('Criou ordem financeira', `41: ${numero41} / ASC Job: ${ascJob}`);
+    await registrarLog('Criou ordem financeira', `41: ${numero41 || '(sem número ainda)'} / ASC Job: ${ascJob}`);
     currentOrdem = nova;
     toast('Ordem criada');
     await renderOrdem();
@@ -1222,8 +1239,56 @@
     await renderOrdem(true);
   };
 
+  window.mostrarEdicaoOrdem = function(){
+    document.getElementById('editNumero41').value = currentOrdem.numero41 || '';
+    document.getElementById('editAscJob').value = currentOrdem.asc_job || '';
+    document.getElementById('blocoEdicaoOrdem').classList.remove('hidden');
+  };
+
+  window.esconderEdicaoOrdem = function(){
+    document.getElementById('blocoEdicaoOrdem').classList.add('hidden');
+  };
+
+  window.salvarEdicaoOrdem = async function(){
+    const novoNumero41 = document.getElementById('editNumero41').value.trim();
+    const novoAscJob = document.getElementById('editAscJob').value.trim();
+
+    if(!novoAscJob){ toast('ASC Job é obrigatório'); return; }
+
+    // confere se já existe outra ordem (diferente desta) usando esse mesmo 41 ou ASC Job
+    const condicoes = [];
+    if(novoNumero41) condicoes.push(`numero41.eq.${novoNumero41}`);
+    condicoes.push(`asc_job.eq.${novoAscJob}`);
+
+    const { data: candidatas, error: errBusca } = await supabase
+      .from('ordens_financeiras').select('*').or(condicoes.join(','));
+    if(errBusca){ toast('Erro ao conferir duplicidade'); console.error(errBusca); return; }
+
+    const conflito = (candidatas || []).find(o => o.id !== currentOrdem.id);
+    if(conflito){
+      toast(`Já existe outra ordem com esse ${conflito.asc_job === novoAscJob ? 'ASC Job' : 'número 41'} (${conflito.numero41 || '(sem 41)'} / ${conflito.asc_job})`);
+      return;
+    }
+
+    const { error } = await supabase.from('ordens_financeiras')
+      .update({ numero41: novoNumero41 || null, asc_job: novoAscJob })
+      .eq('id', currentOrdem.id);
+    if(error){ toast('Erro ao salvar'); console.error(error); return; }
+
+    await registrarLog('Editou 41/ASC da ordem', `Ordem #${currentOrdem.id}: 41 ${currentOrdem.numero41 || '(sem número)'} → ${novoNumero41 || '(sem número)'}, ASC ${currentOrdem.asc_job} → ${novoAscJob}`);
+
+    currentOrdem.numero41 = novoNumero41 || null;
+    currentOrdem.asc_job = novoAscJob;
+    document.getElementById('ordemNumero41').value = currentOrdem.numero41 || '';
+    document.getElementById('ordemAscJob').value = currentOrdem.asc_job;
+    esconderEdicaoOrdem();
+    toast('Ordem atualizada');
+    await renderOrdem(true);
+  };
+
   async function renderOrdem(pularAbrirPainel){
-    document.getElementById('ordemTitulo').textContent = `41: ${currentOrdem.numero41} · ASC Job: ${currentOrdem.asc_job}`;
+    document.getElementById('ordemTitulo').textContent = `41: ${currentOrdem.numero41 || '(sem número)'} · ASC Job: ${currentOrdem.asc_job}`;
+    document.getElementById('blocoEdicaoOrdem').classList.add('hidden');
     document.getElementById('ordemSub').textContent = 'Criada em ' + new Date(currentOrdem.criado_em).toLocaleString('pt-BR');
     document.getElementById('painelOrdem').classList.remove('hidden');
 
@@ -1542,7 +1607,7 @@
     pendentes.forEach(o => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${o.numero41}</td>
+        <td>${o.numero41 || '-'}</td>
         <td>${o.asc_job}</td>
         <td>${fmt(o.esperado)}</td>
         <td>${fmt(o.recebido)}</td>
