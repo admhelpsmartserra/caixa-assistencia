@@ -416,7 +416,7 @@
         <div class="stat"><div class="lbl">Cheque</div><div class="val" id="relDiaCheque">R$ 0,00</div></div>
       </div>
       <table>
-        <thead><tr><th>Hora</th><th>41 / ASC</th><th>Descrição</th><th>Motivo</th><th>Quem</th><th>Forma</th><th>Valor</th></tr></thead>
+        <thead><tr><th>Hora</th><th>41 / ASC</th><th>Descrição</th><th>Motivo</th><th>Quem</th><th>Forma</th><th>Valor</th><th></th></tr></thead>
         <tbody id="relDiaTabela"></tbody>
       </table>
       <div class="empty" id="relDiaVazio" style="display:none">Nenhum lançamento nesse dia.</div>
@@ -1229,13 +1229,32 @@
     await renderOrdem(true);
   };
 
-  window.excluirLancamentoOrdem = async function(id){
+  window.excluirLancamentoRelDia = async function(id, formaPagamento){
+    if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
+    if(!confirm('Excluir esse lançamento?')) return;
+    const { error } = await supabase.from('lancamentos').delete().eq('id', id);
+    if(error){ toast('Erro ao excluir (confere se seu usuário é master)'); console.error(error); return; }
+    await registrarLog('Excluiu lançamento', `Lançamento #${id} (Fechamento por dia)`);
+    toast('Lançamento excluído');
+
+    if(formaPagamento === 'dinheiro'){
+      const dia = document.getElementById('relDia').value;
+      await cascatearSaldoDinheiro(dia);
+    }
+    await consultarFechamentoDia();
+  };
+
+  window.excluirLancamentoOrdem = async function(id, formaPagamento, diaISO){
     if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
     if(!confirm('Excluir esse lançamento da ordem? Isso também tira o valor do fechamento de caixa do dia em que foi feito.')) return;
     const { error } = await supabase.from('lancamentos').delete().eq('id', id);
     if(error){ toast('Erro ao excluir (confere se seu usuário é master)'); console.error(error); return; }
     await registrarLog('Excluiu lançamento', `Lançamento #${id} da ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}`);
     toast('Lançamento excluído');
+
+    if(formaPagamento === 'dinheiro' && diaISO){
+      await cascatearSaldoDinheiro(diaISO);
+    }
     await renderOrdem(true);
   };
 
@@ -1326,7 +1345,7 @@
         <td>${l.descricao || '-'}</td>
         <td>${l.forma_pagamento}</td>
         <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
-        <td>${currentUserRole === 'master' ? `<button class="del" onclick="excluirLancamentoOrdem(${l.id})">excluir</button>` : ''}</td>
+        <td>${currentUserRole === 'master' ? `<button class="del" onclick="excluirLancamentoOrdem(${l.id}, '${l.forma_pagamento}', '${dataLocalISO(new Date(l.criado_em))}')">excluir</button>` : ''}</td>
       `;
       tbody.appendChild(tr);
     });
@@ -1397,6 +1416,7 @@
         <td>${l.criado_por_email || '—'}</td>
         <td>${l.forma_pagamento}</td>
         <td class="valor ${l.tipo}">${l.tipo === 'entrada' ? '+' : '-'} ${fmt(l.valor)}</td>
+        <td>${currentUserRole === 'master' ? `<button class="del" onclick="excluirLancamentoRelDia(${l.id}, '${l.forma_pagamento}')">excluir</button>` : ''}</td>
       `;
       tbody.appendChild(tr);
     });
