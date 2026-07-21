@@ -304,37 +304,17 @@
 
       <div class="card">
         <h2>Orçamento aprovado</h2>
-        <div class="row3">
-          <div>
-            <label>Valor (R$)</label>
-            <input type="number" id="orcValor" step="0.01" placeholder="0,00">
-          </div>
-          <div>
-            <label>Status</label>
-            <select id="orcStatus" onchange="toggleFormaOrc()">
-              <option value="pendente">Pendente</option>
-              <option value="pago">Já pago</option>
-            </select>
-          </div>
-          <div id="orcFormaWrap" class="hidden">
-            <label>Forma de pagamento</label>
-            <select id="orcForma">
-              <option value="dinheiro">Dinheiro</option>
-              <option value="pix">Pix</option>
-              <option value="cartao">Cartão</option>
-              <option value="cheque">Cheque</option>
-            </select>
-          </div>
-        </div>
-        <div id="blocoDataRetroativaOrc" style="display:none">
-          <label>Data/hora do pagamento (deixe em branco = agora)</label>
-          <input type="datetime-local" id="dataRetroativaOrc">
-        </div>
+        <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+          Só registra o valor esperado do orçamento. O pagamento em si é lançado
+          na seção "Lançamento dentro da ordem", logo abaixo.
+        </p>
+        <label>Valor (R$)</label>
+        <input type="number" id="orcValor" step="0.01" placeholder="0,00">
         <button class="secondary" onclick="salvarOrcamento()">Salvar orçamento aprovado</button>
       </div>
 
       <div class="card">
-        <h2>Lançamento avulso (adiantamento, saldo parcial, estorno...)</h2>
+        <h2 id="tituloLancamentoAvulsoOrdem">Lançamento avulso</h2>
         <div class="row3">
           <div>
             <label>Tipo</label>
@@ -364,6 +344,43 @@
           <input type="datetime-local" id="dataRetroativaAvulso">
         </div>
         <button onclick="lancarAvulsoOrdem()">Registrar lançamento avulso</button>
+      </div>
+
+      <div class="card">
+        <h2>Películas/acessórios</h2>
+        <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+          Venda de produto junto com essa OS. Conta como venda nos relatórios, mas
+          fica vinculada ao 41/ASC Job dessa ordem pra você saber que rolou junto.
+        </p>
+        <div class="row3">
+          <div>
+            <label>Produto</label>
+            <select id="produtoTipo">
+              <option value="">Selecione o produto</option>
+              <option value="Película 3D">Película 3D</option>
+              <option value="Película linha S">Película linha S</option>
+              <option value="Película UV">Película UV</option>
+              <option value="Fonte 2.0">Fonte 2.0</option>
+              <option value="Fonte 3.0">Fonte 3.0</option>
+              <option value="Cabo tipo C">Cabo tipo C</option>
+              <option value="Cabo tipo C para tipo C">Cabo tipo C para tipo C</option>
+            </select>
+          </div>
+          <div>
+            <label>Forma de pagamento</label>
+            <select id="produtoForma">
+              <option value="dinheiro">Dinheiro</option>
+              <option value="pix">Pix</option>
+              <option value="cartao">Cartão</option>
+              <option value="cheque">Cheque</option>
+            </select>
+          </div>
+          <div>
+            <label>Valor (R$)</label>
+            <input type="number" id="produtoValor" step="0.01" placeholder="0,00">
+          </div>
+        </div>
+        <button onclick="lancarProdutoOrdem()">Registrar venda</button>
       </div>
 
       <div class="card">
@@ -643,7 +660,7 @@
     const inicio = new Date(meses[0].ano, meses[0].mes, 1, 0,0,0,0);
 
     const { data: lancamentos, error } = await supabase
-      .from('lancamentos').select('valor, ordem_id, natureza, criado_em')
+      .from('lancamentos').select('valor, ordem_id, categoria, natureza, criado_em')
       .eq('tipo', 'entrada')
       .gte('criado_em', inicio.toISOString());
 
@@ -657,7 +674,8 @@
       const chave = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
       if(!(chave in vendasPorMes)) return;
       const valor = Number(l.valor);
-      if(l.ordem_id){ osPorMes[chave] += valor; }
+      if(l.ordem_id && l.categoria === 'produto'){ vendasPorMes[chave] += valor; }
+      else if(l.ordem_id){ osPorMes[chave] += valor; }
       else if(l.natureza !== 'aporte'){ vendasPorMes[chave] += valor; }
     });
 
@@ -690,6 +708,7 @@
     if(l.ordem_id){
       if(l.categoria === 'taxa_analise') return 'Taxa de análise (OS)';
       if(l.categoria === 'orcamento_aprovado') return 'Orçamento aprovado (OS)';
+      if(l.categoria === 'produto') return 'Venda de produto (OS)';
       return 'Avulso de OS';
     }
     if(l.tipo === 'entrada'){
@@ -963,7 +982,8 @@
       if(l.tipo === 'entrada'){
         porForma[l.forma_pagamento] += valor;
         if(ehDinheiro) entradasDinheiro += valor;
-        if(l.ordem_id){ os += valor; }
+        if(l.ordem_id && l.categoria === 'produto'){ vendas += valor; }
+        else if(l.ordem_id){ os += valor; }
         else if(l.natureza === 'aporte'){ aporte += valor; }
         else { vendas += valor; }
       } else {
@@ -1014,9 +1034,6 @@
 
   window.toggleFormaTaxa = function(){
     document.getElementById('taxaFormaWrap').classList.toggle('hidden', document.getElementById('taxaStatus').value !== 'paga');
-  };
-  window.toggleFormaOrc = function(){
-    document.getElementById('orcFormaWrap').classList.toggle('hidden', document.getElementById('orcStatus').value !== 'pago');
   };
 
   window.abrirOrdem = async function(){
@@ -1162,35 +1179,16 @@
   window.salvarOrcamento = async function(){
     if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
     const valor = parseFloat(document.getElementById('orcValor').value) || 0;
-    const status = document.getElementById('orcStatus').value;
-    if(status === 'pago' && valor <= 0){ toast('Preenche o valor do orçamento antes de marcar como pago'); return; }
-    const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativaOrc') : null;
 
     const { error } = await supabase.from('ordens_financeiras')
-      .update({ orcamento_valor: valor, orcamento_status: status })
+      .update({ orcamento_valor: valor, orcamento_status: 'pendente' })
       .eq('id', currentOrdem.id);
     if(error){ toast('Erro ao salvar orçamento'); console.error(error); return; }
 
-    if(status === 'pago' && !(await jaTemLancamentoCategoria('orcamento_aprovado'))){
-      const forma = document.getElementById('orcForma').value;
-      const payload = {
-        ordem_id: currentOrdem.id, categoria:'orcamento_aprovado', tipo:'entrada',
-        forma_pagamento: forma, valor, descricao:'Orçamento aprovado',
-        numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
-        criado_por_email: currentUserEmail
-      };
-      if(dataRetroativa) payload.criado_em = dataRetroativa;
-      await supabase.from('lancamentos').insert(payload);
-
-      if(dataRetroativa && forma === 'dinheiro'){
-        await cascatearSaldoDinheiro(diaDoInputRetroativo('dataRetroativaOrc'));
-      }
-    }
-    await registrarLog('Salvou orçamento', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: R$ ${valor} (${status})${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
+    await registrarLog('Salvou orçamento', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: R$ ${valor} (valor esperado)`);
     toast('Orçamento salvo');
     currentOrdem.orcamento_valor = valor;
-    currentOrdem.orcamento_status = status;
-    document.getElementById('dataRetroativaOrc').value = '';
+    currentOrdem.orcamento_status = 'pendente';
     await renderOrdem(true);
   };
 
@@ -1226,6 +1224,30 @@
       await cascatearSaldoDinheiro(diaAlterado);
     }
     toast('Lançamento avulso registrado');
+    await renderOrdem(true);
+  };
+
+  window.lancarProdutoOrdem = async function(){
+    if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
+    const produto = document.getElementById('produtoTipo').value;
+    const forma = document.getElementById('produtoForma').value;
+    const valor = parseFloat(document.getElementById('produtoValor').value);
+
+    if(!produto){ toast('Seleciona o produto'); return; }
+    if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
+
+    const { error } = await supabase.from('lancamentos').insert({
+      ordem_id: currentOrdem.id, categoria:'produto', tipo:'entrada', forma_pagamento: forma,
+      valor, descricao: produto, numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
+      criado_por_email: currentUserEmail
+    });
+    if(error){ toast('Erro ao registrar'); console.error(error); return; }
+
+    await registrarLog('Vendeu produto na ordem', `${produto} de R$ ${valor} na ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}`);
+
+    document.getElementById('produtoTipo').value = '';
+    document.getElementById('produtoValor').value = '';
+    toast('Venda registrada');
     await renderOrdem(true);
   };
 
@@ -1307,6 +1329,7 @@
 
   async function renderOrdem(pularAbrirPainel){
     document.getElementById('ordemTitulo').textContent = `41: ${currentOrdem.numero41 || '(sem número)'} · ASC Job: ${currentOrdem.asc_job}`;
+    document.getElementById('tituloLancamentoAvulsoOrdem').textContent = `Lançamento dentro da ordem de serviço ${currentOrdem.asc_job}`;
     document.getElementById('blocoEdicaoOrdem').classList.add('hidden');
     document.getElementById('ordemSub').textContent = 'Criada em ' + new Date(currentOrdem.criado_em).toLocaleString('pt-BR');
     document.getElementById('painelOrdem').classList.remove('hidden');
@@ -1324,8 +1347,6 @@
     document.getElementById('taxaStatus').value = currentOrdem.taxa_analise_status || 'pendente';
     toggleFormaTaxa();
     document.getElementById('orcValor').value = currentOrdem.orcamento_valor || '';
-    document.getElementById('orcStatus').value = currentOrdem.orcamento_status || 'pendente';
-    toggleFormaOrc();
 
     const { data: lancamentos, error } = await supabase
       .from('lancamentos').select('*').eq('ordem_id', currentOrdem.id)
@@ -1396,7 +1417,8 @@
       if(l.tipo === 'entrada'){
         porForma[l.forma_pagamento] += valor;
         if(ehDinheiro) entradasDinheiro += valor;
-        if(l.ordem_id){ os += valor; }
+        if(l.ordem_id && l.categoria === 'produto'){ vendas += valor; }
+        else if(l.ordem_id){ os += valor; }
         else if(l.natureza === 'aporte'){ aporte += valor; }
         else { vendas += valor; }
       } else {
@@ -1471,7 +1493,8 @@
       if(l.tipo === 'entrada'){
         entradas += valor; porForma[l.forma_pagamento] += valor;
         porUsuario[email].total += valor;
-        if(l.ordem_id){ os += valor; qtdFaturamento++; }
+        if(l.ordem_id && l.categoria === 'produto'){ vendas += valor; qtdFaturamento++; }
+        else if(l.ordem_id){ os += valor; qtdFaturamento++; }
         else if(l.natureza === 'aporte'){ aporte += valor; }
         else { vendas += valor; qtdFaturamento++; }
       } else {
