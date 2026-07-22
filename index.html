@@ -189,6 +189,10 @@
             <option value="cheque">Cheque</option>
           </select>
         </div>
+        <div>
+          <label>Vendedor (obrigatório)</label>
+          <select id="vendedorAvulso"><option value="">Selecione o vendedor</option></select>
+        </div>
       </div>
       <label>Valor (R$)</label>
       <input type="number" id="valor" step="0.01" placeholder="0,00">
@@ -218,7 +222,7 @@
     <div class="card">
       <h2>Abrir ou criar ordem financeira</h2>
       <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
-        Pra buscar uma ordem que já existe, basta preencher um dos campos. Pra criar uma nova, o ASC Job é obrigatório — o número 41 pode ficar em branco e ser preenchido depois.
+        Pra buscar uma ordem que já existe, basta preencher um dos campos. Pra criar uma nova, o ASC Job e o vendedor são obrigatórios — o número 41 pode ficar em branco e ser preenchido depois.
       </p>
       <div class="row2">
         <div>
@@ -230,6 +234,8 @@
           <input type="text" id="ordemAscJob" placeholder="OR1051">
         </div>
       </div>
+      <label>Vendedor (obrigatório pra criar uma ordem nova)</label>
+      <select id="ordemVendedor"><option value="">Selecione o vendedor</option></select>
       <button onclick="abrirOrdem()">Abrir</button>
     </div>
 
@@ -239,10 +245,12 @@
           <div>
             <h3 id="ordemTitulo">Ordem</h3>
             <p class="sub" id="ordemSub" style="margin:0"></p>
+            <p class="sub" id="ordemVendedorTexto" style="margin:4px 0 0;"></p>
             <p class="sub" id="ordemStatusSelo" style="margin:4px 0 0; font-weight:700;"></p>
           </div>
-          <div style="display:flex; gap:8px;">
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <button class="secondary" onclick="mostrarEdicaoOrdem()">Editar 41/ASC</button>
+            <button class="secondary" onclick="mostrarAutorizarVendedor()">Trocar vendedor</button>
             <button class="secondary" id="btnCancelarOrdem" style="display:none" onclick="cancelarOrdem()">Cancelar ordem</button>
             <button class="secondary" id="btnReabrirOrdem" style="display:none" onclick="reabrirOrdem()">Reabrir ordem</button>
             <button class="secondary" onclick="fecharOrdem()">Trocar ordem</button>
@@ -262,6 +270,28 @@
           <div style="display:flex; gap:8px;">
             <button style="margin:0" onclick="salvarEdicaoOrdem()">Salvar</button>
             <button class="secondary" style="margin:0" onclick="esconderEdicaoOrdem()">Cancelar edição</button>
+          </div>
+        </div>
+        <div id="blocoAutorizarVendedor" class="hidden" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+          <p class="sub" style="margin-top:0;">
+            Pra trocar o vendedor dessa ordem, digita o email e a senha de um usuário <strong>master</strong>.
+            Isso não desloga quem está usando o sistema agora.
+          </p>
+          <div class="row2">
+            <div>
+              <label>Email do master</label>
+              <input type="email" id="autorizarEmail" placeholder="master@exemplo.com">
+            </div>
+            <div>
+              <label>Senha do master</label>
+              <input type="password" id="autorizarSenha">
+            </div>
+          </div>
+          <label>Novo vendedor</label>
+          <select id="novoVendedorSelect"><option value="">Selecione o vendedor</option></select>
+          <div style="display:flex; gap:8px;">
+            <button style="margin:0" onclick="confirmarTrocaVendedor()">Confirmar troca</button>
+            <button class="secondary" style="margin:0" onclick="esconderAutorizarVendedor()">Cancelar</button>
           </div>
         </div>
         <div class="grid">
@@ -557,6 +587,11 @@
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxandhd2trZ3B2ZXZtb2N0Y256Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxODMzMDAsImV4cCI6MjA5ODc1OTMwMH0.pIE17PSXjwZTcANFQ470UW1vbYl4O0w_sc3bnCBBNh4';
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+  // Cliente separado, só pra conferir senha de master na hora (autorização de gerente),
+  // sem persistir sessão nem afetar quem está logado de verdade.
+  const supabaseVerify = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
 
   const hoje = new Date();
   function dataLocalISO(d){
@@ -751,6 +786,7 @@
   let currentUserRole = 'funcionario';
   let currentUserEmail = null;
   let ultimoPeriodoLancamentos = [];
+  let listaVendedores = [];
 
   async function mostrarApp(){
     const { data: { session } } = await supabase.auth.getSession();
@@ -778,8 +814,26 @@
     document.getElementById('blocoDataRetroativaAvulso').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaProduto').style.display = ehMaster ? 'block' : 'none';
 
+    await carregarListaVendedores();
     atualizarOpcoesNatureza();
     carregarCaixa();
+  }
+
+  async function carregarListaVendedores(){
+    const { data, error } = await supabase.from('perfis').select('user_id, email').order('email');
+    if(error){ console.error(error); return; }
+    listaVendedores = data || [];
+    preencherSelectVendedores('ordemVendedor');
+    preencherSelectVendedores('vendedorAvulso');
+  }
+
+  function preencherSelectVendedores(selectId, valorAtual){
+    const sel = document.getElementById(selectId);
+    if(!sel) return;
+    const atual = valorAtual !== undefined ? valorAtual : sel.value;
+    sel.innerHTML = '<option value="">Selecione o vendedor</option>' +
+      listaVendedores.map(v => `<option value="${v.email}">${v.email}</option>`).join('');
+    if(atual) sel.value = atual;
   }
 
   // ---------- ABAS ----------
@@ -932,21 +986,23 @@
     const formaPagamento = natureza === 'sangria' ? 'dinheiro' : document.getElementById('formaPagamento').value;
     const valor = parseFloat(document.getElementById('valor').value);
     const descricao = document.getElementById('descricao').value.trim();
+    const vendedor = document.getElementById('vendedorAvulso').value;
     const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativa') : null;
 
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
+    if(!vendedor){ toast('Seleciona o vendedor'); return; }
     if(!confirmarForma(valor, formaPagamento)) return;
 
     const payload = {
       numero41: null, nosso_numero: null, tipo, forma_pagamento: formaPagamento,
-      valor, descricao, natureza, criado_por_email: currentUserEmail
+      valor, descricao, natureza, criado_por_email: currentUserEmail, vendedor_email: vendedor
     };
     if(dataRetroativa) payload.criado_em = dataRetroativa;
 
     const { error } = await supabase.from('lancamentos').insert(payload);
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
-    await registrarLog('Registrou lançamento avulso', `${tipo} de R$ ${valor} (${descricao}) via ${formaPagamento}${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
+    await registrarLog('Registrou lançamento avulso', `${tipo} de R$ ${valor} (${descricao}) via ${formaPagamento}, vendedor ${vendedor}${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
 
     const diaAlterado = diaDoInputRetroativo('dataRetroativa');
     document.getElementById('valor').value = '';
@@ -1106,11 +1162,14 @@
 
     if(!ascJob){ toast('Pra criar uma ordem nova, o ASC Job é obrigatório (o número 41 pode ficar em branco e ser preenchido depois)'); return; }
 
+    const vendedor = document.getElementById('ordemVendedor').value;
+    if(!vendedor){ toast('Seleciona o vendedor'); return; }
+
     const { data: nova, error: errIns } = await supabase
-      .from('ordens_financeiras').insert({ numero41: numero41 || null, asc_job: ascJob }).select().single();
+      .from('ordens_financeiras').insert({ numero41: numero41 || null, asc_job: ascJob, vendedor_email: vendedor }).select().single();
     if(errIns){ toast('Erro ao criar ordem'); console.error(errIns); return; }
 
-    await registrarLog('Criou ordem financeira', `41: ${numero41 || '(sem número ainda)'} / ASC Job: ${ascJob}`);
+    await registrarLog('Criou ordem financeira', `41: ${numero41 || '(sem número ainda)'} / ASC Job: ${ascJob} / Vendedor: ${vendedor}`);
     currentOrdem = nova;
     toast('Ordem criada');
     await renderOrdem();
@@ -1172,7 +1231,7 @@
         ordem_id: currentOrdem.id, categoria:'taxa_analise', tipo:'entrada',
         forma_pagamento: forma, valor, descricao:'Taxa de análise',
         numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
-        criado_por_email: currentUserEmail
+        criado_por_email: currentUserEmail, vendedor_email: currentOrdem.vendedor_email
       };
       if(dataRetroativa) payload.criado_em = dataRetroativa;
       await supabase.from('lancamentos').insert(payload);
@@ -1220,7 +1279,7 @@
     const payload = {
       ordem_id: currentOrdem.id, categoria:'avulso', tipo, forma_pagamento: forma,
       valor, descricao, numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
-      criado_por_email: currentUserEmail
+      criado_por_email: currentUserEmail, vendedor_email: currentOrdem.vendedor_email
     };
     if(dataRetroativa) payload.criado_em = dataRetroativa;
 
@@ -1255,7 +1314,7 @@
     const payload = {
       ordem_id: currentOrdem.id, categoria:'produto', tipo:'entrada', forma_pagamento: forma,
       valor, descricao: produto, numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
-      criado_por_email: currentUserEmail
+      criado_por_email: currentUserEmail, vendedor_email: currentOrdem.vendedor_email
     };
     if(dataRetroativa) payload.criado_em = dataRetroativa;
 
@@ -1302,6 +1361,50 @@
     if(formaPagamento === 'dinheiro' && diaISO){
       await cascatearSaldoDinheiro(diaISO);
     }
+    await renderOrdem(true);
+  };
+
+  window.mostrarAutorizarVendedor = function(){
+    document.getElementById('autorizarEmail').value = '';
+    document.getElementById('autorizarSenha').value = '';
+    preencherSelectVendedores('novoVendedorSelect', currentOrdem.vendedor_email);
+    document.getElementById('blocoAutorizarVendedor').classList.remove('hidden');
+  };
+
+  window.esconderAutorizarVendedor = function(){
+    document.getElementById('blocoAutorizarVendedor').classList.add('hidden');
+  };
+
+  window.confirmarTrocaVendedor = async function(){
+    const emailMaster = document.getElementById('autorizarEmail').value.trim();
+    const senhaMaster = document.getElementById('autorizarSenha').value;
+    const novoVendedor = document.getElementById('novoVendedorSelect').value;
+
+    if(!emailMaster || !senhaMaster){ toast('Preenche o email e a senha do master'); return; }
+    if(!novoVendedor){ toast('Seleciona o novo vendedor'); return; }
+
+    const { data: verifica, error: errVerifica } = await supabaseVerify.auth.signInWithPassword({
+      email: emailMaster, password: senhaMaster
+    });
+    if(errVerifica || !verifica.user){ toast('Email ou senha do master incorretos'); return; }
+
+    const { data: perfilMaster } = await supabase
+      .from('perfis').select('role').eq('user_id', verifica.user.id).maybeSingle();
+
+    await supabaseVerify.auth.signOut(); // limpa a sessão de verificação, não afeta quem está logado de verdade
+
+    if(!perfilMaster || perfilMaster.role !== 'master'){ toast('Esse usuário não é master'); return; }
+
+    const { error } = await supabase.from('ordens_financeiras')
+      .update({ vendedor_email: novoVendedor })
+      .eq('id', currentOrdem.id);
+    if(error){ toast('Erro ao trocar vendedor'); console.error(error); return; }
+
+    await registrarLog('Trocou vendedor da ordem', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: ${currentOrdem.vendedor_email || '(nenhum)'} → ${novoVendedor}, autorizado por ${emailMaster}`);
+
+    currentOrdem.vendedor_email = novoVendedor;
+    esconderAutorizarVendedor();
+    toast('Vendedor trocado');
     await renderOrdem(true);
   };
 
@@ -1356,7 +1459,9 @@
     document.getElementById('ordemTitulo').textContent = `41: ${currentOrdem.numero41 || '(sem número)'} · ASC Job: ${currentOrdem.asc_job}`;
     document.getElementById('tituloLancamentoAvulsoOrdem').textContent = `Lançamento dentro da ordem de serviço ${currentOrdem.asc_job}`;
     document.getElementById('blocoEdicaoOrdem').classList.add('hidden');
+    document.getElementById('blocoAutorizarVendedor').classList.add('hidden');
     document.getElementById('ordemSub').textContent = 'Criada em ' + new Date(currentOrdem.criado_em).toLocaleString('pt-BR');
+    document.getElementById('ordemVendedorTexto').textContent = `Vendedor: ${currentOrdem.vendedor_email || '(não definido)'}`;
     document.getElementById('painelOrdem').classList.remove('hidden');
 
     const cancelada = currentOrdem.status === 'cancelada';
