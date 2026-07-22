@@ -569,6 +569,13 @@
   document.getElementById('dataHoje').textContent = hoje.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
 
   function fmt(v){ return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ','); }
+  function formaLabel(forma){
+    const labels = { dinheiro:'Dinheiro', pix:'Pix', cartao:'Cartão', cheque:'Cheque' };
+    return labels[forma] || forma;
+  }
+  function confirmarForma(valor, forma){
+    return confirm(`Confirma o lançamento de ${fmt(valor)} via ${formaLabel(forma)}?`);
+  }
   function inicioDoDia(){ const d = new Date(); d.setHours(0,0,0,0); return d.toISOString(); }
   function limitesDoDia(diaISO){
     const [y,m,d] = diaISO.split('-').map(Number);
@@ -928,6 +935,7 @@
     const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativa') : null;
 
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
+    if(!confirmarForma(valor, formaPagamento)) return;
 
     const payload = {
       numero41: null, nosso_numero: null, tipo, forma_pagamento: formaPagamento,
@@ -1151,6 +1159,7 @@
     const status = document.getElementById('taxaStatus').value;
     if(status === 'paga' && valor <= 0){ toast('Preenche o valor da taxa antes de marcar como paga'); return; }
     const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativaTaxa') : null;
+    if(status === 'paga' && !confirmarForma(valor, document.getElementById('taxaForma').value)) return;
 
     const { error } = await supabase.from('ordens_financeiras')
       .update({ taxa_analise_valor: valor, taxa_analise_status: status })
@@ -1206,6 +1215,7 @@
 
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
     if(!descricao){ toast('Descrição é obrigatória nesse tipo de lançamento'); return; }
+    if(!confirmarForma(valor, forma)) return;
 
     const payload = {
       ordem_id: currentOrdem.id, categoria:'avulso', tipo, forma_pagamento: forma,
@@ -1240,6 +1250,7 @@
 
     if(!produto){ toast('Seleciona o produto'); return; }
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
+    if(!confirmarForma(valor, forma)) return;
 
     const payload = {
       ordem_id: currentOrdem.id, categoria:'produto', tipo:'entrada', forma_pagamento: forma,
