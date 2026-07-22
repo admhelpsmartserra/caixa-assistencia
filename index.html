@@ -380,6 +380,10 @@
             <input type="number" id="produtoValor" step="0.01" placeholder="0,00">
           </div>
         </div>
+        <div id="blocoDataRetroativaProduto" style="display:none">
+          <label>Data/hora do lançamento (deixe em branco = agora)</label>
+          <input type="datetime-local" id="dataRetroativaProduto">
+        </div>
         <button onclick="lancarProdutoOrdem()">Registrar venda</button>
       </div>
 
@@ -765,6 +769,7 @@
     document.getElementById('blocoDataRetroativa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaTaxa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaAvulso').style.display = ehMaster ? 'block' : 'none';
+    document.getElementById('blocoDataRetroativaProduto').style.display = ehMaster ? 'block' : 'none';
 
     atualizarOpcoesNatureza();
     carregarCaixa();
@@ -1231,22 +1236,32 @@
     const produto = document.getElementById('produtoTipo').value;
     const forma = document.getElementById('produtoForma').value;
     const valor = parseFloat(document.getElementById('produtoValor').value);
+    const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativaProduto') : null;
 
     if(!produto){ toast('Seleciona o produto'); return; }
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
 
-    const { error } = await supabase.from('lancamentos').insert({
+    const payload = {
       ordem_id: currentOrdem.id, categoria:'produto', tipo:'entrada', forma_pagamento: forma,
       valor, descricao: produto, numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
       criado_por_email: currentUserEmail
-    });
+    };
+    if(dataRetroativa) payload.criado_em = dataRetroativa;
+
+    const { error } = await supabase.from('lancamentos').insert(payload);
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
-    await registrarLog('Vendeu produto na ordem', `${produto} de R$ ${valor} na ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}`);
+    await registrarLog('Vendeu produto na ordem', `${produto} de R$ ${valor} na ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
 
+    const diaAlterado = diaDoInputRetroativo('dataRetroativaProduto');
     document.getElementById('produtoTipo').value = '';
     document.getElementById('produtoValor').value = '';
+    document.getElementById('dataRetroativaProduto').value = '';
     toast('Venda registrada');
+
+    if(dataRetroativa && forma === 'dinheiro'){
+      await cascatearSaldoDinheiro(diaAlterado);
+    }
     await renderOrdem(true);
   };
 
