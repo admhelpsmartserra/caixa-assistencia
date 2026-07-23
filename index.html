@@ -571,6 +571,47 @@
       </table>
       <div class="empty" id="logsVazio" style="display:none">Nenhum log nesse período.</div>
     </div>
+
+    <div class="card" id="cardComissao" style="display:none">
+      <h2>Vendas e comissão por vendedor (só master)</h2>
+      <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+        Escolhe o vendedor e o período. Depois de consultar, edita a % de comissão
+        de cada linha — mesma % em todas pra "tudo junto", ou diferente por
+        categoria/produto.
+      </p>
+      <div class="row3">
+        <div>
+          <label>Vendedor</label>
+          <select id="comissaoVendedor"><option value="">Selecione o vendedor</option></select>
+        </div>
+        <div>
+          <label>De</label>
+          <input type="date" id="comissaoDe">
+        </div>
+        <div>
+          <label>Até</label>
+          <input type="date" id="comissaoAte">
+        </div>
+      </div>
+      <button onclick="consultarComissao()">Consultar</button>
+
+      <div id="blocoResultadoComissao" class="hidden" style="margin-top:16px;">
+        <div class="grid">
+          <div class="stat pos"><div class="lbl">Faturamento total</div><div class="val" id="comissaoFaturamento">R$ 0,00</div></div>
+          <div class="stat"><div class="lbl">Ticket médio</div><div class="val" id="comissaoTicket">R$ 0,00</div></div>
+          <div class="stat"><div class="lbl">Qtd. de vendas</div><div class="val" id="comissaoQtd">0</div></div>
+        </div>
+
+        <h3 style="margin-top:20px; margin-bottom:8px; font-size:15px;">Comissão por categoria (edite a % de cada linha)</h3>
+        <table>
+          <thead><tr><th>Categoria</th><th>Total vendido</th><th>% comissão</th><th>Comissão (R$)</th></tr></thead>
+          <tbody id="comissaoTabela"></tbody>
+          <tfoot>
+            <tr><td colspan="3" style="text-align:right; font-weight:700;">Comissão total</td><td id="comissaoTotalGeral" style="font-weight:700;">R$ 0,00</td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
   </div>
   </div><!-- fecha appContent -->
 </div>
@@ -809,6 +850,7 @@
     document.getElementById('blocoEditarSaldoInicial').style.display = ehMaster ? 'flex' : 'none';
     document.getElementById('saldoSomenteLeituraAviso').style.display = ehMaster ? 'none' : 'block';
     document.getElementById('cardLogs').style.display = ehMaster ? 'block' : 'none';
+    document.getElementById('cardComissao').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaTaxa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaAvulso').style.display = ehMaster ? 'block' : 'none';
@@ -825,6 +867,7 @@
     listaVendedores = data || [];
     preencherSelectVendedores('ordemVendedor');
     preencherSelectVendedores('vendedorAvulso');
+    preencherSelectVendedores('comissaoVendedor');
   }
 
   function preencherSelectVendedores(selectId, valorAtual){
@@ -1721,6 +1764,96 @@
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  let dadosComissaoAtual = null;
+  const PRODUTOS_FIXOS = ['Película 3D', 'Película linha S', 'Película UV', 'Fonte 2.0', 'Fonte 3.0', 'Cabo tipo C', 'Cabo tipo C para tipo C'];
+
+  window.consultarComissao = async function(){
+    const vendedor = document.getElementById('comissaoVendedor').value;
+    const de = document.getElementById('comissaoDe').value;
+    const ate = document.getElementById('comissaoAte').value;
+    if(!vendedor){ toast('Seleciona o vendedor'); return; }
+    if(!de || !ate){ toast('Escolhe as duas datas'); return; }
+
+    const { data: lancamentos, error } = await supabase
+      .from('lancamentos').select('*')
+      .eq('vendedor_email', vendedor)
+      .eq('tipo', 'entrada')
+      .gte('criado_em', inicioDia(de).toISOString())
+      .lt('criado_em', fimDia(ate).toISOString());
+
+    if(error){ toast('Erro ao consultar'); console.error(error); return; }
+
+    let servico = 0, vendasGerais = 0, outrosProdutos = 0, qtd = 0;
+    const porProduto = {};
+    PRODUTOS_FIXOS.forEach(p => porProduto[p] = 0);
+
+    (lancamentos || []).forEach(l => {
+      const valor = Number(l.valor);
+      qtd++;
+      if(l.ordem_id && l.categoria === 'produto'){
+        if(porProduto.hasOwnProperty(l.descricao)) porProduto[l.descricao] += valor;
+        else outrosProdutos += valor;
+      } else if(l.ordem_id){
+        servico += valor;
+      } else if(l.natureza !== 'aporte'){
+        vendasGerais += valor;
+      }
+    });
+
+    const totalProdutos = Object.values(porProduto).reduce((a,b) => a+b, 0) + outrosProdutos;
+    const faturamentoTotal = servico + vendasGerais + totalProdutos;
+    const ticketMedio = qtd > 0 ? faturamentoTotal / qtd : 0;
+
+    dadosComissaoAtual = { servico, vendasGerais, porProduto, outrosProdutos, faturamentoTotal, ticketMedio, qtd };
+
+    document.getElementById('comissaoFaturamento').textContent = fmt(faturamentoTotal);
+    document.getElementById('comissaoTicket').textContent = fmt(ticketMedio);
+    document.getElementById('comissaoQtd').textContent = qtd;
+
+    renderizarLinhasComissao();
+    document.getElementById('blocoResultadoComissao').classList.remove('hidden');
+  };
+
+  function renderizarLinhasComissao(){
+    const tbody = document.getElementById('comissaoTabela');
+    tbody.innerHTML = '';
+
+    const linhas = [
+      { chave: 'servico', label: 'Serviço (OS: taxa + orçamento + avulso de OS)', total: dadosComissaoAtual.servico },
+      { chave: 'vendasGerais', label: 'Vendas gerais (avulso fora de OS)', total: dadosComissaoAtual.vendasGerais }
+    ];
+    PRODUTOS_FIXOS.forEach(p => linhas.push({ chave: 'produto__' + p, label: p, total: dadosComissaoAtual.porProduto[p] }));
+    if(dadosComissaoAtual.outrosProdutos > 0){
+      linhas.push({ chave: 'outros', label: 'Outros produtos', total: dadosComissaoAtual.outrosProdutos });
+    }
+
+    linhas.forEach(l => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${l.label}</td>
+        <td>${fmt(l.total)}</td>
+        <td><input type="number" step="0.1" min="0" max="100" value="0" style="width:80px; margin:0;" data-chave="${l.chave}" data-total="${l.total}" oninput="atualizarComissao()"></td>
+        <td class="valor entrada" data-chave-valor="${l.chave}">R$ 0,00</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    atualizarComissao();
+  }
+
+  window.atualizarComissao = function(){
+    let totalGeral = 0;
+    document.querySelectorAll('#comissaoTabela input[data-chave]').forEach(input => {
+      const total = parseFloat(input.dataset.total) || 0;
+      const pct = parseFloat(input.value) || 0;
+      const valorComissao = total * pct / 100;
+      totalGeral += valorComissao;
+      const td = document.querySelector(`[data-chave-valor="${input.dataset.chave}"]`);
+      if(td) td.textContent = fmt(valorComissao);
+    });
+    document.getElementById('comissaoTotalGeral').textContent = fmt(totalGeral);
   };
 
   window.consultarLogs = async function(){
