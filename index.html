@@ -525,9 +525,15 @@
         A comparação usa o período imediatamente anterior, com a mesma duração em dias do período escolhido.
       </p>
       <div class="grid">
-        <div class="stat"><div class="lbl">Ticket médio (venda/OS)</div><div class="val" id="relPerTicket">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Ticket médio (venda)</div><div class="val" id="relPerTicketVenda">R$ 0,00</div></div>
+        <div class="stat"><div class="lbl">Ticket médio (OS)</div><div class="val" id="relPerTicketOS">R$ 0,00</div></div>
         <div class="stat"><div class="lbl">Faturamento período anterior</div><div class="val" id="relPerFaturamentoAnterior">R$ 0,00</div></div>
         <div class="stat" id="relPerCrescimentoCard"><div class="lbl">Crescimento vs período anterior</div><div class="val" id="relPerCrescimento">—</div></div>
+      </div>
+      <h3 style="margin-top:20px; margin-bottom:8px; font-size:15px;">Quantidade de OSs</h3>
+      <div class="grid">
+        <div class="stat"><div class="lbl">OSs criadas no período</div><div class="val" id="relPerOSCriadas">0</div></div>
+        <div class="stat neg"><div class="lbl">OSs canceladas no período</div><div class="val" id="relPerOSCanceladas">0</div></div>
       </div>
       <h3 style="margin-top:20px; margin-bottom:8px; font-size:15px;">Por quem lançou</h3>
       <table>
@@ -1678,7 +1684,7 @@
 
     let entradas = 0, saidas = 0;
     let vendas = 0, aporte = 0, os = 0, saidasNormais = 0, sangria = 0;
-    let qtdFaturamento = 0;
+    let qtdVendas = 0, qtdOS = 0;
     const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
     const porUsuario = {};
 
@@ -1691,10 +1697,10 @@
       if(l.tipo === 'entrada'){
         entradas += valor; porForma[l.forma_pagamento] += valor;
         porUsuario[email].total += valor;
-        if(l.ordem_id && l.categoria === 'produto'){ vendas += valor; qtdFaturamento++; }
-        else if(l.ordem_id){ os += valor; qtdFaturamento++; }
+        if(l.ordem_id && l.categoria === 'produto'){ vendas += valor; qtdVendas++; }
+        else if(l.ordem_id){ os += valor; qtdOS++; }
         else if(l.natureza === 'aporte'){ aporte += valor; }
-        else { vendas += valor; qtdFaturamento++; }
+        else { vendas += valor; qtdVendas++; }
       } else {
         saidas += valor; porForma[l.forma_pagamento] -= valor;
         if(l.natureza === 'sangria'){ sangria += valor; }
@@ -1719,7 +1725,20 @@
     document.getElementById('relPerFaturamento').textContent = fmt(faturamentoTotal);
     document.getElementById('relPerSangria').textContent = fmt(sangria);
 
-    document.getElementById('relPerTicket').textContent = fmt(qtdFaturamento > 0 ? faturamentoTotal / qtdFaturamento : 0);
+    document.getElementById('relPerTicketVenda').textContent = fmt(qtdVendas > 0 ? vendas / qtdVendas : 0);
+    document.getElementById('relPerTicketOS').textContent = fmt(qtdOS > 0 ? os / qtdOS : 0);
+
+    // ---- quantidade de OSs criadas nesse período (a ordem em si, não pagamentos) ----
+    const { data: ordensCriadas, error: errOrdens } = await supabase
+      .from('ordens_financeiras').select('status')
+      .gte('criado_em', inicioDia(de).toISOString())
+      .lt('criado_em', fimDia(ate).toISOString());
+
+    if(errOrdens){ console.error(errOrdens); }
+    const totalOSCriadas = (ordensCriadas || []).length;
+    const totalOSCanceladas = (ordensCriadas || []).filter(o => o.status === 'cancelada').length;
+    document.getElementById('relPerOSCriadas').textContent = totalOSCriadas;
+    document.getElementById('relPerOSCanceladas').textContent = totalOSCanceladas;
 
     // ---- comparação com o período anterior (mesma duração, imediatamente antes) ----
     const inicioAtual = inicioDia(de);
