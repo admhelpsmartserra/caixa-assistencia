@@ -652,6 +652,26 @@
   function confirmarForma(valor, forma){
     return confirm(`Confirma o lançamento de ${fmt(valor)} via ${formaLabel(forma)}?`);
   }
+
+  // Senha extra de confirmação pra ações sensíveis (excluir, cancelar, editar saldo).
+  // Guardada como hash (SHA-256), não em texto puro — mas como é tudo client-side,
+  // não é segurança "de verdade" contra alguém decidido a abrir o código-fonte.
+  // A proteção real continua sendo o RLS (só master consegue de fato no banco);
+  // isso aqui é só uma confirmação extra pra evitar erro/clique casual.
+  const SENHA_SENSIVEL_HASH = '4b0286074e77bbab97084ccb430ac15b54d03c13d7bf59fdb8cc94294cbf4366';
+
+  async function sha256Hex(texto){
+    const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texto));
+    return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function pedirSenhaSensivel(mensagem){
+    const senha = prompt(`${mensagem}\n\nDigita a senha de 6 dígitos:`);
+    if(senha === null) return false; // clicou cancelar
+    const hash = await sha256Hex(senha);
+    if(hash !== SENHA_SENSIVEL_HASH){ toast('Senha incorreta'); return false; }
+    return true;
+  }
   function inicioDoDia(){ const d = new Date(); d.setHours(0,0,0,0); return d.toISOString(); }
   function limitesDoDia(diaISO){
     const [y,m,d] = diaISO.split('-').map(Number);
@@ -984,6 +1004,7 @@
   }
 
   window.salvarSaldoInicial = async function(){
+    if(!(await pedirSenhaSensivel('Editar o saldo em dinheiro do dia'))) return;
     const valor = parseFloat(document.getElementById('saldoInicial').value) || 0;
     const { error } = await supabase.from('saldo_inicial').upsert({ dia: hojeISO, valor });
     if(error){ toast('Erro ao salvar saldo inicial'); console.error(error); return; }
@@ -1062,6 +1083,7 @@
   window.excluir = async function(id){
     if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
     if(!confirm('Excluir esse lançamento?')) return;
+    if(!(await pedirSenhaSensivel('Excluir esse lançamento'))) return;
     const { error } = await supabase.from('lancamentos').delete().eq('id', id);
     if(error){ toast('Erro ao excluir (confere se seu usuário é master)'); console.error(error); return; }
     await registrarLog('Excluiu lançamento', `Lançamento #${id} (Caixa do dia)`);
@@ -1228,6 +1250,7 @@
   window.cancelarOrdem = async function(){
     if(currentUserRole !== 'master'){ toast('Só master pode cancelar ordem'); return; }
     if(!confirm('Cancelar essa ordem? Os lançamentos já feitos continuam no histórico normalmente.')) return;
+    if(!(await pedirSenhaSensivel('Cancelar essa ordem'))) return;
     const { error } = await supabase.from('ordens_financeiras')
       .update({ status: 'cancelada' }).eq('id', currentOrdem.id);
     if(error){ toast('Erro ao cancelar ordem'); console.error(error); return; }
@@ -1381,6 +1404,7 @@
   window.excluirLancamentoRelDia = async function(id, formaPagamento){
     if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
     if(!confirm('Excluir esse lançamento?')) return;
+    if(!(await pedirSenhaSensivel('Excluir esse lançamento'))) return;
     const { error } = await supabase.from('lancamentos').delete().eq('id', id);
     if(error){ toast('Erro ao excluir (confere se seu usuário é master)'); console.error(error); return; }
     await registrarLog('Excluiu lançamento', `Lançamento #${id} (Fechamento por dia)`);
@@ -1396,6 +1420,7 @@
   window.excluirLancamentoOrdem = async function(id, formaPagamento, diaISO){
     if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
     if(!confirm('Excluir esse lançamento da ordem? Isso também tira o valor do fechamento de caixa do dia em que foi feito.')) return;
+    if(!(await pedirSenhaSensivel('Excluir esse lançamento'))) return;
     const { error } = await supabase.from('lancamentos').delete().eq('id', id);
     if(error){ toast('Erro ao excluir (confere se seu usuário é master)'); console.error(error); return; }
     await registrarLog('Excluiu lançamento', `Lançamento #${id} da ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}`);
