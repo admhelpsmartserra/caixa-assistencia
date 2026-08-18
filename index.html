@@ -1089,8 +1089,9 @@
   }
 
   window.mudarGrupoProduto = async function(id, grupo){
-    const { error } = await supabase.from('produtos').update({ grupo: grupo || null }).eq('id', id);
+    const { data, error } = await supabase.from('produtos').update({ grupo: grupo || null }).eq('id', id).select();
     if(error){ toast('Erro ao salvar grupo (confere se é master)'); console.error(error); return; }
+    if(!data || !data.length){ toast('Não teve permissão pra mudar (confere se seu usuário é master)'); await carregarListaProdutos(); return; }
     const nome = (listaProdutos.find(p => p.id === id) || {}).nome || `#${id}`;
     await registrarLog('Mudou grupo de produto', `${nome} → ${grupo || 'Nenhum'}`);
     toast('Grupo atualizado');
