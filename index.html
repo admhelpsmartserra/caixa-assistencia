@@ -2226,7 +2226,7 @@
   // ---------- COMISSÃO POR EXCEDENTE SOBRE BASELINE ----------
   const CATEGORIAS_EXCEDENTE = [
     { chave: 'servico', label: 'Serviço (OS)' },
-    { chave: 'vendas_gerais', label: 'Vendas gerais' },
+    { chave: 'vendas_gerais', label: 'Lojista / Vendas gerais' },
     { chave: 'pelicula', label: 'Película' },
     { chave: 'fonte_cabo', label: 'Fonte + Cabo' }
   ];
@@ -2283,7 +2283,7 @@
     let servico = 0, vendasGerais = 0, pelicula = 0, fonteCabo = 0;
     (lancamentos || []).forEach(l => {
       const valor = Number(l.valor);
-      if(l.categoria === 'lojista') return; // fora do escopo dessa comissão
+      if(l.categoria === 'lojista'){ vendasGerais += valor; return; }
 
       if(l.ordem_id && l.categoria !== 'produto'){ servico += valor; return; }
 
