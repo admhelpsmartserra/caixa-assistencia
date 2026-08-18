@@ -114,6 +114,7 @@
 
     <div class="tabs">
       <div class="tab active" id="tabCaixaBtn" onclick="mudarAba('caixa')">Caixa do dia</div>
+      <div class="tab" id="tabVendasBtn" onclick="mudarAba('vendas')">Vendas</div>
       <div class="tab" id="tabOrdemBtn" onclick="mudarAba('ordem')">Ordem financeira</div>
       <div class="tab" id="tabRelBtn" onclick="mudarAba('relatorios')">Relatórios</div>
     </div>
@@ -149,6 +150,7 @@
         <div class="stat pos"><div class="lbl">Total de vendas</div><div class="val" id="cardVendas">R$ 0,00</div></div>
         <div class="stat pos"><div class="lbl">Entradas avulsas (aporte)</div><div class="val" id="cardAporte">R$ 0,00</div></div>
         <div class="stat pos"><div class="lbl">Total de OS</div><div class="val" id="cardOS">R$ 0,00</div></div>
+        <div class="stat pos"><div class="lbl">Vendas por atacado (lojista)</div><div class="val" id="cardLojista">R$ 0,00</div></div>
         <div class="stat"><div class="lbl">Faturamento total</div><div class="val" id="cardFaturamento">R$ 0,00</div></div>
         <div class="stat neg"><div class="lbl">Total de saídas</div><div class="val" id="cardSaidas">R$ 0,00</div></div>
       </div>
@@ -161,10 +163,11 @@
     </div>
 
     <div class="card">
-      <h2>Novo lançamento avulso (venda, troco...)</h2>
+      <h2>Novo lançamento avulso (aporte, troco...)</h2>
       <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
-        Use isso só pra vendas sem relação com ordem de serviço (película, acessório, troco...).
-        Pra taxa de análise, orçamento ou qualquer pagamento de uma ordem, use a aba <strong>Ordem financeira</strong>.
+        Use isso só pra aporte de caixa (reforço/troco) e saídas avulsas. Pra vender
+        produto, usa a aba <strong>Vendas</strong>. Pra pagamento de uma ordem, usa a
+        aba <strong>Ordem financeira</strong>.
       </p>
       <div class="row2">
         <div>
@@ -197,7 +200,7 @@
       <label>Valor (R$)</label>
       <input type="number" id="valor" step="0.01" placeholder="0,00">
       <label>Descrição</label>
-      <input type="text" id="descricao" placeholder="Ex: película, adiantamento, troco...">
+      <input type="text" id="descricao" placeholder="Ex: reforço de caixa, troco...">
       <div id="blocoDataRetroativa" style="display:none">
         <label>Data/hora do lançamento (deixe em branco = agora)</label>
         <input type="datetime-local" id="dataRetroativa">
@@ -214,6 +217,64 @@
         <tbody id="tabelaBody"></tbody>
       </table>
       <div class="empty" id="vazio" style="display:none">Nenhum lançamento hoje ainda.</div>
+    </div>
+  </div>
+
+  <!-- ABA: VENDAS -->
+  <div id="abaVendas" class="hidden">
+    <div class="card">
+      <h2>Nova venda</h2>
+      <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+        Venda avulsa, sem vínculo com ordem de serviço. Pra vender junto de uma OS,
+        usa a seção "Películas/acessórios" dentro da própria ordem.
+      </p>
+      <div class="row3">
+        <div>
+          <label>Produto</label>
+          <select id="vendaProduto">
+            <option value="">Selecione o produto</option>
+            <option value="Película 3D">Película 3D</option>
+            <option value="Película linha S">Película linha S</option>
+            <option value="Película UV">Película UV</option>
+            <option value="Fonte 2.0">Fonte 2.0</option>
+            <option value="Fonte 3.0">Fonte 3.0</option>
+            <option value="Cabo tipo C">Cabo tipo C</option>
+            <option value="Cabo tipo C para tipo C">Cabo tipo C para tipo C</option>
+            <option value="Lojista">Lojista</option>
+          </select>
+        </div>
+        <div>
+          <label>Forma de pagamento</label>
+          <select id="vendaForma">
+            <option value="dinheiro">Dinheiro</option>
+            <option value="pix">Pix</option>
+            <option value="cartao">Cartão</option>
+            <option value="cheque">Cheque</option>
+          </select>
+        </div>
+        <div>
+          <label>Valor (R$)</label>
+          <input type="number" id="vendaValor" step="0.01" placeholder="0,00">
+        </div>
+      </div>
+      <label>Vendedor (obrigatório)</label>
+      <select id="vendedorVenda"><option value="">Selecione o vendedor</option></select>
+      <div id="blocoDataRetroativaVenda" style="display:none">
+        <label>Data/hora do lançamento (deixe em branco = agora)</label>
+        <input type="datetime-local" id="dataRetroativaVenda">
+      </div>
+      <button onclick="lancarVenda()">Registrar venda</button>
+    </div>
+
+    <div class="card">
+      <h2>Vendas de hoje</h2>
+      <table>
+        <thead>
+          <tr><th>Hora</th><th>Produto</th><th>Vendedor</th><th>Forma</th><th>Valor</th><th></th></tr>
+        </thead>
+        <tbody id="vendasTabelaBody"></tbody>
+      </table>
+      <div class="empty" id="vendasVazio" style="display:none">Nenhuma venda hoje ainda.</div>
     </div>
   </div>
 
@@ -457,6 +518,7 @@
         <div class="stat pos"><div class="lbl">Total de vendas</div><div class="val" id="relDiaVendas">R$ 0,00</div></div>
         <div class="stat pos"><div class="lbl">Entradas avulsas (aporte)</div><div class="val" id="relDiaAporte">R$ 0,00</div></div>
         <div class="stat pos"><div class="lbl">Total de OS</div><div class="val" id="relDiaOS">R$ 0,00</div></div>
+        <div class="stat pos"><div class="lbl">Vendas por atacado (lojista)</div><div class="val" id="relDiaLojista">R$ 0,00</div></div>
         <div class="stat"><div class="lbl">Faturamento total</div><div class="val" id="relDiaFaturamento">R$ 0,00</div></div>
         <div class="stat neg"><div class="lbl">Total de saídas</div><div class="val" id="relDiaSaidas">R$ 0,00</div></div>
       </div>
@@ -517,6 +579,7 @@
         <div class="stat pos"><div class="lbl">Vendas</div><div class="val" id="relPerVendas">R$ 0,00</div></div>
         <div class="stat pos"><div class="lbl">Aporte de caixa</div><div class="val" id="relPerAporte">R$ 0,00</div></div>
         <div class="stat pos"><div class="lbl">Ordens de serviço</div><div class="val" id="relPerOS">R$ 0,00</div></div>
+        <div class="stat pos"><div class="lbl">Vendas por atacado (lojista)</div><div class="val" id="relPerLojista">R$ 0,00</div></div>
         <div class="stat"><div class="lbl">Faturamento total</div><div class="val" id="relPerFaturamento">R$ 0,00</div></div>
         <div class="stat neg"><div class="lbl">Retirada malote (sangria)</div><div class="val" id="relPerSangria">R$ 0,00</div></div>
       </div>
@@ -779,8 +842,8 @@
 
     if(error){ console.error(error); return; }
 
-    const vendasPorMes = {}, osPorMes = {};
-    meses.forEach(m => { vendasPorMes[m.chave] = 0; osPorMes[m.chave] = 0; });
+    const vendasPorMes = {}, osPorMes = {}, lojistaPorMes = {};
+    meses.forEach(m => { vendasPorMes[m.chave] = 0; osPorMes[m.chave] = 0; lojistaPorMes[m.chave] = 0; });
 
     (lancamentos || []).forEach(l => {
       const d = new Date(l.criado_em);
@@ -789,13 +852,15 @@
       const valor = Number(l.valor);
       if(l.ordem_id && l.categoria === 'produto'){ vendasPorMes[chave] += valor; }
       else if(l.ordem_id){ osPorMes[chave] += valor; }
+      else if(l.categoria === 'lojista'){ lojistaPorMes[chave] += valor; }
       else if(l.natureza !== 'aporte'){ vendasPorMes[chave] += valor; }
     });
 
     const labels = meses.map(m => new Date(m.ano, m.mes, 1).toLocaleDateString('pt-BR', { month:'short', year:'2-digit' }));
     const dadosVendas = meses.map(m => vendasPorMes[m.chave]);
     const dadosOS = meses.map(m => osPorMes[m.chave]);
-    const dadosFaturamento = meses.map(m => vendasPorMes[m.chave] + osPorMes[m.chave]);
+    const dadosLojista = meses.map(m => lojistaPorMes[m.chave]);
+    const dadosFaturamento = meses.map(m => vendasPorMes[m.chave] + osPorMes[m.chave] + lojistaPorMes[m.chave]);
 
     if(graficoFaturamento) graficoFaturamento.destroy();
     const ctx = document.getElementById('graficoFaturamento').getContext('2d');
@@ -806,7 +871,8 @@
         datasets: [
           { label: 'Faturamento total', data: dadosFaturamento, borderColor: '#1B6B52', backgroundColor: '#1B6B52', tension: 0.25 },
           { label: 'Vendas', data: dadosVendas, borderColor: '#3D7DC9', backgroundColor: '#3D7DC9', tension: 0.25 },
-          { label: 'Ordens de serviço', data: dadosOS, borderColor: '#C98B3D', backgroundColor: '#C98B3D', tension: 0.25 }
+          { label: 'Ordens de serviço', data: dadosOS, borderColor: '#C98B3D', backgroundColor: '#C98B3D', tension: 0.25 },
+          { label: 'Lojista', data: dadosLojista, borderColor: '#8A4FBF', backgroundColor: '#8A4FBF', tension: 0.25 }
         ]
       },
       options: {
@@ -824,6 +890,7 @@
       if(l.categoria === 'produto') return 'Venda de produto (OS)';
       return 'Avulso de OS';
     }
+    if(l.categoria === 'lojista') return 'Venda por atacado (lojista)';
     if(l.tipo === 'entrada'){
       return l.natureza === 'aporte' ? 'Aporte de caixa' : 'Venda';
     }
@@ -881,6 +948,7 @@
     document.getElementById('blocoDataRetroativaTaxa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaAvulso').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaProduto').style.display = ehMaster ? 'block' : 'none';
+    document.getElementById('blocoDataRetroativaVenda').style.display = ehMaster ? 'block' : 'none';
 
     await carregarListaVendedores();
     atualizarOpcoesNatureza();
@@ -893,6 +961,7 @@
     listaVendedores = data || [];
     preencherSelectVendedores('ordemVendedor');
     preencherSelectVendedores('vendedorAvulso');
+    preencherSelectVendedores('vendedorVenda');
     preencherSelectVendedores('comissaoVendedor');
   }
 
@@ -908,12 +977,15 @@
   // ---------- ABAS ----------
   window.mudarAba = function(aba){
     document.getElementById('abaCaixa').classList.toggle('hidden', aba !== 'caixa');
+    document.getElementById('abaVendas').classList.toggle('hidden', aba !== 'vendas');
     document.getElementById('abaOrdem').classList.toggle('hidden', aba !== 'ordem');
     document.getElementById('abaRelatorios').classList.toggle('hidden', aba !== 'relatorios');
     document.getElementById('tabCaixaBtn').classList.toggle('active', aba === 'caixa');
+    document.getElementById('tabVendasBtn').classList.toggle('active', aba === 'vendas');
     document.getElementById('tabOrdemBtn').classList.toggle('active', aba === 'ordem');
     document.getElementById('tabRelBtn').classList.toggle('active', aba === 'relatorios');
     if(aba === 'relatorios') carregarGraficoFaturamento();
+    if(aba === 'vendas') carregarVendasHoje();
   };
 
   // ---------- CAIXA DO DIA ----------
@@ -1025,7 +1097,6 @@
     const sel = document.getElementById('natureza');
     if(tipo === 'entrada'){
       sel.innerHTML = `
-        <option value="venda">Venda (película, acessório...)</option>
         <option value="aporte">Aporte (reforço de caixa, injeção de dinheiro)</option>
       `;
     } else {
@@ -1096,6 +1167,85 @@
     carregarCaixa();
   };
 
+  // ---------- VENDAS ----------
+  window.lancarVenda = async function(){
+    const produto = document.getElementById('vendaProduto').value;
+    const forma = document.getElementById('vendaForma').value;
+    const valor = parseFloat(document.getElementById('vendaValor').value);
+    const vendedor = document.getElementById('vendedorVenda').value;
+    const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativaVenda') : null;
+
+    if(!produto){ toast('Seleciona o produto'); return; }
+    if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
+    if(!vendedor){ toast('Seleciona o vendedor'); return; }
+    if(!confirmarForma(valor, forma)) return;
+
+    const categoria = produto === 'Lojista' ? 'lojista' : 'venda_avulsa';
+
+    const payload = {
+      numero41: null, nosso_numero: null, ordem_id: null, categoria, tipo: 'entrada',
+      forma_pagamento: forma, valor, descricao: produto,
+      criado_por_email: currentUserEmail, vendedor_email: vendedor
+    };
+    if(dataRetroativa) payload.criado_em = dataRetroativa;
+
+    const { error } = await supabase.from('lancamentos').insert(payload);
+    if(error){ toast('Erro ao registrar'); console.error(error); return; }
+
+    await registrarLog('Registrou venda', `${produto} de R$ ${valor} via ${forma}, vendedor ${vendedor}${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
+
+    const diaAlterado = diaDoInputRetroativo('dataRetroativaVenda');
+    document.getElementById('vendaProduto').value = '';
+    document.getElementById('vendaValor').value = '';
+    document.getElementById('dataRetroativaVenda').value = '';
+    toast('Venda registrada');
+
+    if(dataRetroativa && forma === 'dinheiro'){
+      await cascatearSaldoDinheiro(diaAlterado);
+    }
+    await carregarVendasHoje();
+  };
+
+  async function carregarVendasHoje(){
+    const { data: vendas, error } = await supabase
+      .from('lancamentos').select('*')
+      .in('categoria', ['venda_avulsa', 'lojista'])
+      .gte('criado_em', inicioDoDia())
+      .order('criado_em', { ascending:false });
+
+    if(error){ console.error(error); return; }
+
+    const tbody = document.getElementById('vendasTabelaBody');
+    tbody.innerHTML = '';
+
+    (vendas || []).forEach(l => {
+      const hora = new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${hora}</td>
+        <td>${l.descricao}${l.categoria === 'lojista' ? ' (Lojista)' : ''}</td>
+        <td>${l.vendedor_email || '—'}</td>
+        <td>${l.forma_pagamento}</td>
+        <td class="valor entrada">${fmt(l.valor)}</td>
+        <td>${currentUserRole === 'master' ? `<button class="del" onclick="excluirVenda(${l.id})">excluir</button>` : ''}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('vendasVazio').style.display = (vendas || []).length ? 'none' : 'block';
+  }
+
+  window.excluirVenda = async function(id){
+    if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
+    if(!confirm('Excluir essa venda?')) return;
+    if(!(await pedirSenhaSensivel('Excluir essa venda'))) return;
+    const { error } = await supabase.from('lancamentos').delete().eq('id', id);
+    if(error){ toast('Erro ao excluir (confere se seu usuário é master)'); console.error(error); return; }
+    await registrarLog('Excluiu venda', `Lançamento #${id} (aba Vendas)`);
+    toast('Venda excluída');
+    await carregarVendasHoje();
+  };
+
   async function carregarCaixa(){
     const { data: saldoRows } = await supabase.from('saldo_inicial').select('valor').eq('dia', hojeISO).maybeSingle();
     const saldoInicial = saldoRows ? Number(saldoRows.valor) : await calcularSaldoDinheiroAutomatico();
@@ -1108,7 +1258,7 @@
 
     if(error){ console.error(error); return; }
 
-    let vendas = 0, aporte = 0, os = 0, saidasNormais = 0, sangria = 0;
+    let vendas = 0, aporte = 0, os = 0, saidasNormais = 0, sangria = 0, lojista = 0;
     let entradasDinheiro = 0, saidasDinheiro = 0;
     const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
     const tbody = document.getElementById('tabelaBody');
@@ -1123,6 +1273,7 @@
         if(ehDinheiro) entradasDinheiro += valor;
         if(l.ordem_id && l.categoria === 'produto'){ vendas += valor; }
         else if(l.ordem_id){ os += valor; }
+        else if(l.categoria === 'lojista'){ lojista += valor; }
         else if(l.natureza === 'aporte'){ aporte += valor; }
         else { vendas += valor; }
       } else {
@@ -1131,6 +1282,8 @@
         if(l.natureza === 'sangria'){ sangria += valor; }
         else { saidasNormais += valor; }
       }
+
+      if(l.categoria === 'venda_avulsa' || l.categoria === 'lojista') return; // essas aparecem na aba Vendas, não aqui
 
       const hora = new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
       const tr = document.createElement('tr');
@@ -1149,7 +1302,7 @@
 
     document.getElementById('vazio').style.display = (lancamentos || []).length ? 'none' : 'block';
 
-    const faturamentoTotal = vendas + os;
+    const faturamentoTotal = vendas + os + lojista;
     const saldoDinheiroFinal = saldoInicial + entradasDinheiro - saidasDinheiro;
 
     document.getElementById('cardSaldoInicial').textContent = fmt(saldoInicial);
@@ -1159,6 +1312,7 @@
     document.getElementById('cardVendas').textContent = fmt(vendas);
     document.getElementById('cardAporte').textContent = fmt(aporte);
     document.getElementById('cardOS').textContent = fmt(os);
+    document.getElementById('cardLojista').textContent = fmt(lojista);
     document.getElementById('cardFaturamento').textContent = fmt(faturamentoTotal);
     document.getElementById('cardSaidas').textContent = fmt(saidasNormais);
 
@@ -1608,7 +1762,7 @@
 
     if(error){ toast('Erro ao consultar'); console.error(error); return; }
 
-    let vendas = 0, aporte = 0, os = 0, saidasNormais = 0, sangria = 0;
+    let vendas = 0, aporte = 0, os = 0, saidasNormais = 0, sangria = 0, lojista = 0;
     let entradasDinheiro = 0, saidasDinheiro = 0;
     const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
     const tbody = document.getElementById('relDiaTabela');
@@ -1623,6 +1777,7 @@
         if(ehDinheiro) entradasDinheiro += valor;
         if(l.ordem_id && l.categoria === 'produto'){ vendas += valor; }
         else if(l.ordem_id){ os += valor; }
+        else if(l.categoria === 'lojista'){ lojista += valor; }
         else if(l.natureza === 'aporte'){ aporte += valor; }
         else { vendas += valor; }
       } else {
@@ -1649,7 +1804,7 @@
 
     document.getElementById('relDiaVazio').style.display = (lancamentos || []).length ? 'none' : 'block';
 
-    const faturamentoTotal = vendas + os;
+    const faturamentoTotal = vendas + os + lojista;
     const saldoDinheiroFinal = saldoInicial + entradasDinheiro - saidasDinheiro;
 
     document.getElementById('relDiaSaldoInicial').textContent = fmt(saldoInicial);
@@ -1659,6 +1814,7 @@
     document.getElementById('relDiaVendas').textContent = fmt(vendas);
     document.getElementById('relDiaAporte').textContent = fmt(aporte);
     document.getElementById('relDiaOS').textContent = fmt(os);
+    document.getElementById('relDiaLojista').textContent = fmt(lojista);
     document.getElementById('relDiaFaturamento').textContent = fmt(faturamentoTotal);
     document.getElementById('relDiaSaidas').textContent = fmt(saidasNormais);
 
@@ -1683,7 +1839,7 @@
     ultimoPeriodoLancamentos = lancamentos || [];
 
     let entradas = 0, saidas = 0;
-    let vendas = 0, aporte = 0, os = 0, saidasNormais = 0, sangria = 0;
+    let vendas = 0, aporte = 0, os = 0, saidasNormais = 0, sangria = 0, lojista = 0;
     let qtdVendas = 0, qtdOS = 0;
     const porForma = { dinheiro:0, pix:0, cartao:0, cheque:0 };
     const porUsuario = {};
@@ -1699,6 +1855,7 @@
         porUsuario[email].total += valor;
         if(l.ordem_id && l.categoria === 'produto'){ vendas += valor; qtdVendas++; }
         else if(l.ordem_id){ os += valor; qtdOS++; }
+        else if(l.categoria === 'lojista'){ lojista += valor; }
         else if(l.natureza === 'aporte'){ aporte += valor; }
         else { vendas += valor; qtdVendas++; }
       } else {
@@ -1708,7 +1865,7 @@
       }
     });
 
-    const faturamentoTotal = vendas + os;
+    const faturamentoTotal = vendas + os + lojista;
 
     document.getElementById('relPerEntradas').textContent = fmt(entradas);
     document.getElementById('relPerSaidas').textContent = fmt(saidas);
@@ -1722,6 +1879,7 @@
     document.getElementById('relPerVendas').textContent = fmt(vendas);
     document.getElementById('relPerAporte').textContent = fmt(aporte);
     document.getElementById('relPerOS').textContent = fmt(os);
+    document.getElementById('relPerLojista').textContent = fmt(lojista);
     document.getElementById('relPerFaturamento').textContent = fmt(faturamentoTotal);
     document.getElementById('relPerSangria').textContent = fmt(sangria);
 
@@ -1829,16 +1987,18 @@
 
     if(error){ toast('Erro ao consultar'); console.error(error); return; }
 
-    let servico = 0, vendasGerais = 0, outrosProdutos = 0, qtd = 0;
+    let servico = 0, vendasGerais = 0, lojista = 0, outrosProdutos = 0, qtd = 0;
     const porProduto = {};
     PRODUTOS_FIXOS.forEach(p => porProduto[p] = 0);
 
     (lancamentos || []).forEach(l => {
       const valor = Number(l.valor);
       qtd++;
-      if(l.ordem_id && l.categoria === 'produto'){
+      if((l.ordem_id && l.categoria === 'produto') || l.categoria === 'venda_avulsa'){
         if(porProduto.hasOwnProperty(l.descricao)) porProduto[l.descricao] += valor;
         else outrosProdutos += valor;
+      } else if(l.categoria === 'lojista'){
+        lojista += valor;
       } else if(l.ordem_id){
         servico += valor;
       } else if(l.natureza !== 'aporte'){
@@ -1847,10 +2007,10 @@
     });
 
     const totalProdutos = Object.values(porProduto).reduce((a,b) => a+b, 0) + outrosProdutos;
-    const faturamentoTotal = servico + vendasGerais + totalProdutos;
+    const faturamentoTotal = servico + vendasGerais + lojista + totalProdutos;
     const ticketMedio = qtd > 0 ? faturamentoTotal / qtd : 0;
 
-    dadosComissaoAtual = { servico, vendasGerais, porProduto, outrosProdutos, faturamentoTotal, ticketMedio, qtd };
+    dadosComissaoAtual = { servico, vendasGerais, lojista, porProduto, outrosProdutos, faturamentoTotal, ticketMedio, qtd };
 
     document.getElementById('comissaoFaturamento').textContent = fmt(faturamentoTotal);
     document.getElementById('comissaoTicket').textContent = fmt(ticketMedio);
@@ -1866,7 +2026,8 @@
 
     const linhas = [
       { chave: 'servico', label: 'Serviço (OS: taxa + orçamento + avulso de OS)', total: dadosComissaoAtual.servico },
-      { chave: 'vendasGerais', label: 'Vendas gerais (avulso fora de OS)', total: dadosComissaoAtual.vendasGerais }
+      { chave: 'vendasGerais', label: 'Vendas gerais (avulso fora de OS)', total: dadosComissaoAtual.vendasGerais },
+      { chave: 'lojista', label: 'Vendas por atacado (lojista)', total: dadosComissaoAtual.lojista }
     ];
     PRODUTOS_FIXOS.forEach(p => linhas.push({ chave: 'produto__' + p, label: p, total: dadosComissaoAtual.porProduto[p] }));
     if(dadosComissaoAtual.outrosProdutos > 0){
