@@ -273,19 +273,28 @@
       <h2>Gerenciar produtos (só master)</h2>
       <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
         Produtos daqui aparecem nos selects de venda (aba Vendas e Películas/acessórios
-        dentro de uma OS). "Lojista" é especial e não entra nessa lista.
+        dentro de uma OS). "Lojista" é especial e não entra nessa lista. O "Grupo" é
+        usado só pro cálculo de comissão por excedente (Película / Fonte e Cabo).
       </p>
-      <div class="row2">
+      <div class="row3">
         <div>
           <label>Nome do produto novo</label>
           <input type="text" id="novoProdutoNome" placeholder="Ex: Capinha de silicone">
+        </div>
+        <div>
+          <label>Grupo (opcional)</label>
+          <select id="novoProdutoGrupo">
+            <option value="">Nenhum</option>
+            <option value="Pelicula">Película</option>
+            <option value="Fonte_Cabo">Fonte e Cabo</option>
+          </select>
         </div>
         <div style="display:flex; align-items:flex-end;">
           <button style="margin:0" onclick="adicionarProduto()">Adicionar</button>
         </div>
       </div>
       <table>
-        <thead><tr><th>Produto</th><th></th></tr></thead>
+        <thead><tr><th>Produto</th><th>Grupo</th><th></th></tr></thead>
         <tbody id="listaProdutosTabela"></tbody>
       </table>
     </div>
@@ -687,6 +696,58 @@
         </table>
       </div>
     </div>
+
+    <div class="card" id="cardComissaoExcedente" style="display:none">
+      <h2>Comissão por excedente sobre baseline (só master)</h2>
+      <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+        A comissão só incide sobre o que passar da meta (baseline) de cada categoria.
+        Abaixo da meta, comissão é R$ 0,00 — nunca fica negativa.
+      </p>
+      <div class="row3">
+        <div>
+          <label>Vendedor</label>
+          <select id="excedenteVendedor" onchange="carregarBaselinesParaEdicao()"><option value="">Selecione o vendedor</option></select>
+        </div>
+        <div>
+          <label>Período</label>
+          <select id="excedentePeriodoTipo" onchange="toggleExcedenteMes()">
+            <option value="mes_civil">Mês civil (dia 1 ao último dia)</option>
+            <option value="30dias">Últimos 30 dias corridos</option>
+          </select>
+        </div>
+        <div id="excedenteMesWrap">
+          <label>Mês</label>
+          <input type="month" id="excedenteMes">
+        </div>
+      </div>
+      <button onclick="consultarComissaoExcedente()">Calcular comissão</button>
+
+      <div id="blocoResultadoExcedente" class="hidden" style="margin-top:16px;">
+        <table>
+          <thead><tr><th>Categoria</th><th>Faturamento</th><th>Baseline</th><th>%</th><th>Excedente</th><th>Comissão</th></tr></thead>
+          <tbody id="excedenteTabela"></tbody>
+          <tfoot>
+            <tr><td colspan="5" style="text-align:right; font-weight:700;">Comissão total</td><td id="excedenteTotalGeral" style="font-weight:700;">R$ 0,00</td></tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <h3 style="margin-top:24px; margin-bottom:8px; font-size:15px;">Baselines desse vendedor</h3>
+      <p class="sub" style="margin-top:-4px; margin-bottom:10px;">
+        Salvar um baseline novo não apaga o anterior — cria um registro novo no histórico,
+        e esse passa a valer a partir de agora.
+      </p>
+      <table>
+        <thead><tr><th>Categoria</th><th>Baseline atual</th><th>% atual</th><th>Novo baseline</th><th>Nova %</th><th></th></tr></thead>
+        <tbody id="baselinesTabela"></tbody>
+      </table>
+
+      <h3 style="margin-top:24px; margin-bottom:8px; font-size:15px;">Histórico de baselines</h3>
+      <table>
+        <thead><tr><th>Quando</th><th>Categoria</th><th>Baseline</th><th>%</th><th>Quem alterou</th></tr></thead>
+        <tbody id="historicoBaselinesTabela"></tbody>
+      </table>
+    </div>
   </div>
   </div><!-- fecha appContent -->
 </div>
@@ -951,6 +1012,7 @@
     document.getElementById('saldoSomenteLeituraAviso').style.display = ehMaster ? 'none' : 'block';
     document.getElementById('cardLogs').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('cardComissao').style.display = ehMaster ? 'block' : 'none';
+    document.getElementById('cardComissaoExcedente').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('cardGerenciarProdutos').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaTaxa').style.display = ehMaster ? 'block' : 'none';
@@ -972,6 +1034,7 @@
     preencherSelectVendedores('vendedorAvulso');
     preencherSelectVendedores('vendedorVenda');
     preencherSelectVendedores('comissaoVendedor');
+    preencherSelectVendedores('excedenteVendedor');
   }
 
   function preencherSelectVendedores(selectId, valorAtual){
@@ -1010,24 +1073,45 @@
     tbody.innerHTML = '';
     listaProdutos.forEach(p => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${p.nome}</td><td><button class="del" onclick="removerProduto(${p.id})">remover</button></td>`;
+      tr.innerHTML = `
+        <td>${p.nome}</td>
+        <td>
+          <select style="width:auto; margin:0;" onchange="mudarGrupoProduto(${p.id}, this.value)">
+            <option value="" ${!p.grupo ? 'selected' : ''}>Nenhum</option>
+            <option value="Pelicula" ${p.grupo === 'Pelicula' ? 'selected' : ''}>Película</option>
+            <option value="Fonte_Cabo" ${p.grupo === 'Fonte_Cabo' ? 'selected' : ''}>Fonte e Cabo</option>
+          </select>
+        </td>
+        <td><button class="del" onclick="removerProduto(${p.id})">remover</button></td>
+      `;
       tbody.appendChild(tr);
     });
   }
 
+  window.mudarGrupoProduto = async function(id, grupo){
+    const { error } = await supabase.from('produtos').update({ grupo: grupo || null }).eq('id', id);
+    if(error){ toast('Erro ao salvar grupo (confere se é master)'); console.error(error); return; }
+    const nome = (listaProdutos.find(p => p.id === id) || {}).nome || `#${id}`;
+    await registrarLog('Mudou grupo de produto', `${nome} → ${grupo || 'Nenhum'}`);
+    toast('Grupo atualizado');
+    await carregarListaProdutos();
+  };
+
   window.adicionarProduto = async function(){
     const nome = document.getElementById('novoProdutoNome').value.trim();
+    const grupo = document.getElementById('novoProdutoGrupo').value || null;
     if(!nome){ toast('Digita o nome do produto'); return; }
 
-    const { error } = await supabase.from('produtos').insert({ nome });
+    const { error } = await supabase.from('produtos').insert({ nome, grupo });
     if(error){
       if(error.code === '23505'){ toast('Esse produto já existe'); }
       else { toast('Erro ao adicionar produto'); console.error(error); }
       return;
     }
 
-    await registrarLog('Adicionou produto', nome);
+    await registrarLog('Adicionou produto', `${nome}${grupo ? ' (grupo: ' + grupo + ')' : ''}`);
     document.getElementById('novoProdutoNome').value = '';
+    document.getElementById('novoProdutoGrupo').value = '';
     toast('Produto adicionado');
     await carregarListaProdutos();
   };
@@ -1822,6 +1906,7 @@
   document.getElementById('relDia').value = hojeISO;
   document.getElementById('logsAte').value = hojeISO;
   document.getElementById('logsDe').value = dataLocalISO(new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 6));
+  document.getElementById('excedenteMes').value = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;
 
   window.consultarFechamentoDia = async function(){
     const dia = document.getElementById('relDia').value;
@@ -2136,6 +2221,175 @@
     });
     document.getElementById('comissaoTotalGeral').textContent = fmt(totalGeral);
   };
+
+  // ---------- COMISSÃO POR EXCEDENTE SOBRE BASELINE ----------
+  const CATEGORIAS_EXCEDENTE = [
+    { chave: 'servico', label: 'Serviço (OS)' },
+    { chave: 'vendas_gerais', label: 'Vendas gerais' },
+    { chave: 'pelicula', label: 'Película' },
+    { chave: 'fonte_cabo', label: 'Fonte + Cabo' }
+  ];
+
+  window.toggleExcedenteMes = function(){
+    const tipo = document.getElementById('excedentePeriodoTipo').value;
+    document.getElementById('excedenteMesWrap').style.display = tipo === 'mes_civil' ? 'block' : 'none';
+  };
+
+  function limitesPeriodoExcedente(){
+    const tipo = document.getElementById('excedentePeriodoTipo').value;
+    if(tipo === 'mes_civil'){
+      const mesVal = document.getElementById('excedenteMes').value; // "2026-08"
+      if(!mesVal) return null;
+      const [ano, mes] = mesVal.split('-').map(Number);
+      const inicio = new Date(ano, mes - 1, 1, 0,0,0,0);
+      const fim = new Date(ano, mes, 1, 0,0,0,0);
+      return { inicio, fim };
+    }
+    const fim = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + 1, 0,0,0,0);
+    const inicio = new Date(fim);
+    inicio.setDate(inicio.getDate() - 30);
+    return { inicio, fim };
+  }
+
+  async function buscarBaselinesAtuais(vendedor){
+    const { data, error } = await supabase
+      .from('comissao_baselines').select('*')
+      .eq('vendedor_email', vendedor)
+      .order('criado_em', { ascending:false });
+    if(error){ console.error(error); return {}; }
+    const atual = {};
+    (data || []).forEach(row => { if(!atual[row.categoria]) atual[row.categoria] = row; });
+    return atual;
+  }
+
+  window.consultarComissaoExcedente = async function(){
+    const vendedor = document.getElementById('excedenteVendedor').value;
+    if(!vendedor){ toast('Seleciona o vendedor'); return; }
+    const periodo = limitesPeriodoExcedente();
+    if(!periodo){ toast('Escolhe o mês'); return; }
+
+    const { data: lancamentos, error } = await supabase
+      .from('lancamentos').select('*')
+      .eq('vendedor_email', vendedor)
+      .eq('tipo', 'entrada')
+      .gte('criado_em', periodo.inicio.toISOString())
+      .lt('criado_em', periodo.fim.toISOString());
+    if(error){ toast('Erro ao consultar'); console.error(error); return; }
+
+    const gruposPorNome = {};
+    listaProdutos.forEach(p => { gruposPorNome[p.nome] = p.grupo; });
+
+    let servico = 0, vendasGerais = 0, pelicula = 0, fonteCabo = 0;
+    (lancamentos || []).forEach(l => {
+      const valor = Number(l.valor);
+      if(l.categoria === 'lojista') return; // fora do escopo dessa comissão
+
+      if(l.ordem_id && l.categoria !== 'produto'){ servico += valor; return; }
+
+      if((l.ordem_id && l.categoria === 'produto') || l.categoria === 'venda_avulsa'){
+        const grupo = gruposPorNome[l.descricao];
+        if(grupo === 'Pelicula'){ pelicula += valor; }
+        else if(grupo === 'Fonte_Cabo'){ fonteCabo += valor; }
+        else if(l.categoria === 'venda_avulsa'){ vendasGerais += valor; }
+      }
+    });
+
+    const faturamentoPorCategoria = { servico, vendas_gerais: vendasGerais, pelicula, fonte_cabo: fonteCabo };
+    const baselines = await buscarBaselinesAtuais(vendedor);
+
+    let totalGeral = 0;
+    const tbody = document.getElementById('excedenteTabela');
+    tbody.innerHTML = '';
+
+    CATEGORIAS_EXCEDENTE.forEach(c => {
+      const faturamento = faturamentoPorCategoria[c.chave] || 0;
+      const b = baselines[c.chave];
+      const baseline = b ? Number(b.baseline) : 0;
+      const percentual = b ? Number(b.percentual) : 0;
+      const excedente = Math.max(0, faturamento - baseline);
+      const comissao = excedente * percentual;
+      totalGeral += comissao;
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${c.label}</td>
+        <td>${fmt(faturamento)}</td>
+        <td>${b ? fmt(baseline) : '— (sem baseline definido)'}</td>
+        <td>${b ? (percentual * 100).toFixed(1) + '%' : '—'}</td>
+        <td>${fmt(excedente)}</td>
+        <td class="valor entrada">${fmt(comissao)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('excedenteTotalGeral').textContent = fmt(totalGeral);
+    document.getElementById('blocoResultadoExcedente').classList.remove('hidden');
+  };
+
+  window.carregarBaselinesParaEdicao = async function(){
+    const vendedor = document.getElementById('excedenteVendedor').value;
+    if(!vendedor) return;
+    const atuais = await buscarBaselinesAtuais(vendedor);
+
+    const tbody = document.getElementById('baselinesTabela');
+    tbody.innerHTML = '';
+    CATEGORIAS_EXCEDENTE.forEach(c => {
+      const atual = atuais[c.chave];
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${c.label}</td>
+        <td>${atual ? fmt(atual.baseline) : '—'}</td>
+        <td>${atual ? (Number(atual.percentual) * 100).toFixed(1) + '%' : '—'}</td>
+        <td><input type="number" step="0.01" id="novoBaseline__${c.chave}" placeholder="R$" style="width:110px; margin:0;"></td>
+        <td><input type="number" step="0.1" id="novoPercentual__${c.chave}" placeholder="%" style="width:70px; margin:0;"></td>
+        <td><button style="margin:0" onclick="salvarBaseline('${c.chave}')">Salvar</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    await carregarHistoricoBaselines(vendedor);
+  };
+
+  window.salvarBaseline = async function(categoria){
+    const vendedor = document.getElementById('excedenteVendedor').value;
+    if(!vendedor){ toast('Seleciona o vendedor'); return; }
+    const baseline = parseFloat(document.getElementById('novoBaseline__' + categoria).value);
+    const percentualDigitado = parseFloat(document.getElementById('novoPercentual__' + categoria).value);
+    if(isNaN(baseline) || isNaN(percentualDigitado)){ toast('Preenche o baseline e a %'); return; }
+
+    const { error } = await supabase.from('comissao_baselines').insert({
+      vendedor_email: vendedor, categoria, baseline, percentual: percentualDigitado / 100,
+      criado_por_email: currentUserEmail
+    });
+    if(error){ toast('Erro ao salvar baseline (confere se é master)'); console.error(error); return; }
+
+    await registrarLog('Atualizou baseline de comissão', `${vendedor} / ${categoria}: R$ ${baseline}, ${percentualDigitado}%`);
+    toast('Baseline salvo');
+    await carregarBaselinesParaEdicao();
+  };
+
+  async function carregarHistoricoBaselines(vendedor){
+    const { data, error } = await supabase
+      .from('comissao_baselines').select('*')
+      .eq('vendedor_email', vendedor)
+      .order('criado_em', { ascending:false });
+    if(error){ console.error(error); return; }
+
+    const tbody = document.getElementById('historicoBaselinesTabela');
+    tbody.innerHTML = '';
+    (data || []).forEach(row => {
+      const label = (CATEGORIAS_EXCEDENTE.find(c => c.chave === row.categoria) || {}).label || row.categoria;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${new Date(row.criado_em).toLocaleString('pt-BR')}</td>
+        <td>${label}</td>
+        <td>${fmt(row.baseline)}</td>
+        <td>${(Number(row.percentual) * 100).toFixed(1)}%</td>
+        <td>${row.criado_por_email || '—'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
 
   window.consultarLogs = async function(){
     if(currentUserRole !== 'master'){ toast('Só master pode ver os logs'); return; }
