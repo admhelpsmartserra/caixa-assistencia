@@ -113,14 +113,14 @@
     </div>
 
     <div class="tabs">
-      <div class="tab active" id="tabCaixaBtn" onclick="mudarAba('caixa')">Caixa do dia</div>
-      <div class="tab" id="tabVendasBtn" onclick="mudarAba('vendas')">Vendas</div>
+      <div class="tab active" id="tabVendasBtn" onclick="mudarAba('vendas')">Vendas</div>
+      <div class="tab" id="tabCaixaBtn" onclick="mudarAba('caixa')">Caixa do dia</div>
       <div class="tab" id="tabOrdemBtn" onclick="mudarAba('ordem')">Ordem financeira</div>
       <div class="tab" id="tabRelBtn" onclick="mudarAba('relatorios')">Relatórios</div>
     </div>
 
   <!-- ABA: CAIXA DO DIA -->
-  <div id="abaCaixa">
+  <div id="abaCaixa" class="hidden">
     <div class="card">
       <h2>Saldo em dinheiro</h2>
       <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
@@ -200,7 +200,7 @@
       <label>Valor (R$)</label>
       <input type="number" id="valor" step="0.01" placeholder="0,00">
       <label>Descrição</label>
-      <input type="text" id="descricao" placeholder="Ex: reforço de caixa, troco...">
+      <input type="text" id="descricao" placeholder="Se for entrada, a palavra 'aporte' precisa aparecer aqui">
       <div id="blocoDataRetroativa" style="display:none">
         <label>Data/hora do lançamento (deixe em branco = agora)</label>
         <input type="datetime-local" id="dataRetroativa">
@@ -221,7 +221,7 @@
   </div>
 
   <!-- ABA: VENDAS -->
-  <div id="abaVendas" class="hidden">
+  <div id="abaVendas">
     <div class="card">
       <h2>Nova venda</h2>
       <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
@@ -952,7 +952,7 @@
 
     await carregarListaVendedores();
     atualizarOpcoesNatureza();
-    carregarCaixa();
+    carregarVendasHoje();
   }
 
   async function carregarListaVendedores(){
@@ -986,6 +986,7 @@
     document.getElementById('tabRelBtn').classList.toggle('active', aba === 'relatorios');
     if(aba === 'relatorios') carregarGraficoFaturamento();
     if(aba === 'vendas') carregarVendasHoje();
+    if(aba === 'caixa') carregarCaixa();
   };
 
   // ---------- CAIXA DO DIA ----------
@@ -1132,6 +1133,10 @@
 
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
     if(!vendedor){ toast('Seleciona o vendedor'); return; }
+    if(tipo === 'entrada' && !descricao.toLowerCase().includes('aporte')){
+      toast('A descrição precisa conter a palavra "aporte" pra confirmar que não é uma venda');
+      return;
+    }
     if(!confirmarForma(valor, formaPagamento)) return;
 
     const payload = {
