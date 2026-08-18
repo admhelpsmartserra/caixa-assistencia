@@ -233,14 +233,6 @@
           <label>Produto</label>
           <select id="vendaProduto">
             <option value="">Selecione o produto</option>
-            <option value="Película 3D">Película 3D</option>
-            <option value="Película linha S">Película linha S</option>
-            <option value="Película UV">Película UV</option>
-            <option value="Fonte 2.0">Fonte 2.0</option>
-            <option value="Fonte 3.0">Fonte 3.0</option>
-            <option value="Cabo tipo C">Cabo tipo C</option>
-            <option value="Cabo tipo C para tipo C">Cabo tipo C para tipo C</option>
-            <option value="Lojista">Lojista</option>
           </select>
         </div>
         <div>
@@ -275,6 +267,27 @@
         <tbody id="vendasTabelaBody"></tbody>
       </table>
       <div class="empty" id="vendasVazio" style="display:none">Nenhuma venda hoje ainda.</div>
+    </div>
+
+    <div class="card" id="cardGerenciarProdutos" style="display:none">
+      <h2>Gerenciar produtos (só master)</h2>
+      <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+        Produtos daqui aparecem nos selects de venda (aba Vendas e Películas/acessórios
+        dentro de uma OS). "Lojista" é especial e não entra nessa lista.
+      </p>
+      <div class="row2">
+        <div>
+          <label>Nome do produto novo</label>
+          <input type="text" id="novoProdutoNome" placeholder="Ex: Capinha de silicone">
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button style="margin:0" onclick="adicionarProduto()">Adicionar</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Produto</th><th></th></tr></thead>
+        <tbody id="listaProdutosTabela"></tbody>
+      </table>
     </div>
   </div>
 
@@ -448,13 +461,6 @@
             <label>Produto</label>
             <select id="produtoTipo">
               <option value="">Selecione o produto</option>
-              <option value="Película 3D">Película 3D</option>
-              <option value="Película linha S">Película linha S</option>
-              <option value="Película UV">Película UV</option>
-              <option value="Fonte 2.0">Fonte 2.0</option>
-              <option value="Fonte 3.0">Fonte 3.0</option>
-              <option value="Cabo tipo C">Cabo tipo C</option>
-              <option value="Cabo tipo C para tipo C">Cabo tipo C para tipo C</option>
             </select>
           </div>
           <div>
@@ -921,6 +927,7 @@
   let currentUserEmail = null;
   let ultimoPeriodoLancamentos = [];
   let listaVendedores = [];
+  let listaProdutos = [];
 
   async function mostrarApp(){
     const { data: { session } } = await supabase.auth.getSession();
@@ -944,6 +951,7 @@
     document.getElementById('saldoSomenteLeituraAviso').style.display = ehMaster ? 'none' : 'block';
     document.getElementById('cardLogs').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('cardComissao').style.display = ehMaster ? 'block' : 'none';
+    document.getElementById('cardGerenciarProdutos').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaTaxa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaAvulso').style.display = ehMaster ? 'block' : 'none';
@@ -951,6 +959,7 @@
     document.getElementById('blocoDataRetroativaVenda').style.display = ehMaster ? 'block' : 'none';
 
     await carregarListaVendedores();
+    await carregarListaProdutos();
     atualizarOpcoesNatureza();
     carregarVendasHoje();
   }
@@ -973,6 +982,68 @@
       listaVendedores.map(v => `<option value="${v.email}">${v.email}</option>`).join('');
     if(atual) sel.value = atual;
   }
+
+  // ---------- PRODUTOS ----------
+  async function carregarListaProdutos(){
+    const { data, error } = await supabase.from('produtos').select('*').order('nome');
+    if(error){ console.error(error); return; }
+    listaProdutos = data || [];
+    preencherSelectProdutos('vendaProduto', true);
+    preencherSelectProdutos('produtoTipo', false);
+    renderizarGerenciarProdutos();
+  }
+
+  function preencherSelectProdutos(selectId, incluirLojista){
+    const sel = document.getElementById(selectId);
+    if(!sel) return;
+    const atual = sel.value;
+    let html = '<option value="">Selecione o produto</option>' +
+      listaProdutos.map(p => `<option value="${p.nome}">${p.nome}</option>`).join('');
+    if(incluirLojista) html += '<option value="Lojista">Lojista</option>';
+    sel.innerHTML = html;
+    if(atual) sel.value = atual;
+  }
+
+  function renderizarGerenciarProdutos(){
+    const tbody = document.getElementById('listaProdutosTabela');
+    if(!tbody) return;
+    tbody.innerHTML = '';
+    listaProdutos.forEach(p => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${p.nome}</td><td><button class="del" onclick="removerProduto(${p.id})">remover</button></td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  window.adicionarProduto = async function(){
+    const nome = document.getElementById('novoProdutoNome').value.trim();
+    if(!nome){ toast('Digita o nome do produto'); return; }
+
+    const { error } = await supabase.from('produtos').insert({ nome });
+    if(error){
+      if(error.code === '23505'){ toast('Esse produto já existe'); }
+      else { toast('Erro ao adicionar produto'); console.error(error); }
+      return;
+    }
+
+    await registrarLog('Adicionou produto', nome);
+    document.getElementById('novoProdutoNome').value = '';
+    toast('Produto adicionado');
+    await carregarListaProdutos();
+  };
+
+  window.removerProduto = async function(id){
+    const produto = listaProdutos.find(p => p.id === id);
+    const nome = produto ? produto.nome : `#${id}`;
+    if(!confirm(`Remover "${nome}" da lista de produtos? Vendas já registradas não são afetadas.`)) return;
+
+    const { error } = await supabase.from('produtos').delete().eq('id', id);
+    if(error){ toast('Erro ao remover produto (confere se seu usuário é master)'); console.error(error); return; }
+
+    await registrarLog('Removeu produto', nome);
+    toast('Produto removido');
+    await carregarListaProdutos();
+  };
 
   // ---------- ABAS ----------
   window.mudarAba = function(aba){
@@ -1974,7 +2045,7 @@
   };
 
   let dadosComissaoAtual = null;
-  const PRODUTOS_FIXOS = ['Película 3D', 'Película linha S', 'Película UV', 'Fonte 2.0', 'Fonte 3.0', 'Cabo tipo C', 'Cabo tipo C para tipo C'];
+  function nomesProdutosAtuais(){ return listaProdutos.map(p => p.nome); }
 
   window.consultarComissao = async function(){
     const vendedor = document.getElementById('comissaoVendedor').value;
@@ -1994,7 +2065,7 @@
 
     let servico = 0, vendasGerais = 0, lojista = 0, outrosProdutos = 0, qtd = 0;
     const porProduto = {};
-    PRODUTOS_FIXOS.forEach(p => porProduto[p] = 0);
+    nomesProdutosAtuais().forEach(p => porProduto[p] = 0);
 
     (lancamentos || []).forEach(l => {
       const valor = Number(l.valor);
@@ -2034,7 +2105,7 @@
       { chave: 'vendasGerais', label: 'Vendas gerais (avulso fora de OS)', total: dadosComissaoAtual.vendasGerais },
       { chave: 'lojista', label: 'Vendas por atacado (lojista)', total: dadosComissaoAtual.lojista }
     ];
-    PRODUTOS_FIXOS.forEach(p => linhas.push({ chave: 'produto__' + p, label: p, total: dadosComissaoAtual.porProduto[p] }));
+    nomesProdutosAtuais().forEach(p => linhas.push({ chave: 'produto__' + p, label: p, total: dadosComissaoAtual.porProduto[p] }));
     if(dadosComissaoAtual.outrosProdutos > 0){
       linhas.push({ chave: 'outros', label: 'Outros produtos', total: dadosComissaoAtual.outrosProdutos });
     }
