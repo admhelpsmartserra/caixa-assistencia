@@ -405,6 +405,17 @@
 
         <div class="row2" style="margin-top:16px;">
           <div>
+            <label>Cliente (obrigatório)</label>
+            <select id="pecaTipoCliente" onchange="onPecaTipoClienteChange()">
+              <option value="">Selecione</option>
+              <option value="cliente_final">Cliente final</option>
+              <option value="lojista">Lojista</option>
+            </select>
+          </div>
+          <div></div>
+        </div>
+        <div class="row2">
+          <div>
             <label>Descrição (obrigatória)</label>
             <input type="text" id="pecaDescricao" list="descricoesPecasList" placeholder="Ex: Tela, Bateria, Placa...">
             <datalist id="descricoesPecasList"></datalist>
@@ -1733,12 +1744,26 @@
     document.getElementById('pecasVazio').style.display = (pecas || []).length ? 'none' : 'block';
   }
 
+  window.onPecaTipoClienteChange = function(){
+    const tipo = document.getElementById('pecaTipoCliente').value;
+    const campoDescricao = document.getElementById('pecaDescricao');
+    if(tipo === 'lojista'){
+      campoDescricao.value = 'LOJISTA';
+      campoDescricao.disabled = true;
+    } else {
+      campoDescricao.disabled = false;
+      if(campoDescricao.value === 'LOJISTA') campoDescricao.value = '';
+    }
+  };
+
   window.adicionarOuEditarPeca = async function(){
     if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
+    const tipoCliente = document.getElementById('pecaTipoCliente').value;
     const descricao = document.getElementById('pecaDescricao').value.trim();
     const valor = parseFloat(document.getElementById('pecaValor').value);
     const editandoId = document.getElementById('pecaEditandoId').value;
 
+    if(!tipoCliente){ toast('Seleciona se é Cliente final ou Lojista'); return; }
     if(!descricao){ toast('Descrição é obrigatória'); return; }
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
 
@@ -1762,7 +1787,9 @@
   };
 
   window.editarPeca = function(id, descricao, valor){
+    document.getElementById('pecaTipoCliente').value = descricao === 'LOJISTA' ? 'lojista' : 'cliente_final';
     document.getElementById('pecaDescricao').value = descricao;
+    document.getElementById('pecaDescricao').disabled = (descricao === 'LOJISTA');
     document.getElementById('pecaValor').value = valor;
     document.getElementById('pecaEditandoId').value = id;
     document.getElementById('btnSalvarPeca').textContent = 'Salvar edição';
@@ -1771,7 +1798,9 @@
   };
 
   window.cancelarEdicaoPeca = function(){
+    document.getElementById('pecaTipoCliente').value = '';
     document.getElementById('pecaDescricao').value = '';
+    document.getElementById('pecaDescricao').disabled = false;
     document.getElementById('pecaValor').value = '';
     document.getElementById('pecaEditandoId').value = '';
     document.getElementById('btnSalvarPeca').textContent = 'Adicionar peça';
