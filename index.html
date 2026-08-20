@@ -357,7 +357,13 @@
       </div>
 
       <div class="card">
-        <h2>Taxa de análise</h2>
+        <h2>Cobranças da ordem</h2>
+        <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+          Taxa de análise, peças aprovadas no orçamento e acessórios vendidos junto
+          — tudo relacionado a quanto essa ordem deve gerar de dinheiro.
+        </p>
+
+        <h3 style="margin-top:0; margin-bottom:10px; font-size:15px;">Taxa de análise</h3>
         <div class="row3">
           <div>
             <label>Valor (R$)</label>
@@ -385,11 +391,9 @@
           <input type="datetime-local" id="dataRetroativaTaxa">
         </div>
         <button class="secondary" onclick="salvarTaxa()">Salvar taxa de análise</button>
-      </div>
 
-      <div class="card">
-        <h2>Orçamento aprovado (peças)</h2>
-        <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+        <h3 style="margin-top:28px; margin-bottom:10px; font-size:15px; padding-top:20px; border-top:1px solid var(--border);">Orçamento aprovado (peças)</h3>
+        <p class="sub" style="margin-top:-4px; margin-bottom:14px;">
           Cada peça aprovada é uma linha, com descrição obrigatória. O total soma
           sozinho no "Valor esperado" da ordem. O pagamento em si é lançado na
           seção "Lançamento dentro da ordem", logo abaixo.
@@ -417,6 +421,51 @@
         <input type="hidden" id="pecaEditandoId" value="">
         <button id="btnSalvarPeca" onclick="adicionarOuEditarPeca()">Adicionar peça</button>
         <button class="secondary" id="btnCancelarEdicaoPeca" style="display:none" onclick="cancelarEdicaoPeca()">Cancelar edição</button>
+
+        <h3 style="margin-top:28px; margin-bottom:10px; font-size:15px; padding-top:20px; border-top:1px solid var(--border);">Acessórios</h3>
+        <p class="sub" style="margin-top:-4px; margin-bottom:14px;">
+          Venda de produto junto com essa OS. Pode registrar como já pago, ou deixar
+          pendente e marcar como pago depois. Conta como venda nos relatórios.
+        </p>
+        <table>
+          <thead><tr><th>Produto</th><th>Valor</th><th>Status</th><th>Forma</th><th></th></tr></thead>
+          <tbody id="acessoriosTabela"></tbody>
+        </table>
+        <div class="empty" id="acessoriosVazio" style="display:none">Nenhum acessório lançado ainda.</div>
+
+        <div class="row3" style="margin-top:16px;">
+          <div>
+            <label>Produto</label>
+            <select id="produtoTipo">
+              <option value="">Selecione o produto</option>
+            </select>
+          </div>
+          <div>
+            <label>Valor (R$)</label>
+            <input type="number" id="acessorioValor" step="0.01" placeholder="0,00">
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="acessorioStatus" onchange="toggleFormaAcessorio()">
+              <option value="pendente">Pendente</option>
+              <option value="pago">Já pago</option>
+            </select>
+          </div>
+        </div>
+        <div id="acessorioFormaWrap" class="hidden">
+          <label>Forma de pagamento</label>
+          <select id="acessorioForma">
+            <option value="dinheiro">Dinheiro</option>
+            <option value="pix">Pix</option>
+            <option value="cartao">Cartão</option>
+            <option value="cheque">Cheque</option>
+          </select>
+        </div>
+        <div id="blocoDataRetroativaProduto" style="display:none">
+          <label>Data/hora do pagamento (deixe em branco = agora)</label>
+          <input type="datetime-local" id="dataRetroativaProduto">
+        </div>
+        <button onclick="adicionarAcessorio()">Adicionar acessório</button>
       </div>
 
       <div class="card">
@@ -450,40 +499,6 @@
           <input type="datetime-local" id="dataRetroativaAvulso">
         </div>
         <button onclick="lancarAvulsoOrdem()">Registrar lançamento avulso</button>
-      </div>
-
-      <div class="card">
-        <h2>Películas/acessórios</h2>
-        <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
-          Venda de produto junto com essa OS. Conta como venda nos relatórios, mas
-          fica vinculada ao 41/ASC Job dessa ordem pra você saber que rolou junto.
-        </p>
-        <div class="row3">
-          <div>
-            <label>Produto</label>
-            <select id="produtoTipo">
-              <option value="">Selecione o produto</option>
-            </select>
-          </div>
-          <div>
-            <label>Forma de pagamento</label>
-            <select id="produtoForma">
-              <option value="dinheiro">Dinheiro</option>
-              <option value="pix">Pix</option>
-              <option value="cartao">Cartão</option>
-              <option value="cheque">Cheque</option>
-            </select>
-          </div>
-          <div>
-            <label>Valor (R$)</label>
-            <input type="number" id="produtoValor" step="0.01" placeholder="0,00">
-          </div>
-        </div>
-        <div id="blocoDataRetroativaProduto" style="display:none">
-          <label>Data/hora do lançamento (deixe em branco = agora)</label>
-          <input type="datetime-local" id="dataRetroativaProduto">
-        </div>
-        <button onclick="lancarProdutoOrdem()">Registrar venda</button>
       </div>
 
       <div class="card">
@@ -1539,6 +1554,9 @@
   window.toggleFormaTaxa = function(){
     document.getElementById('taxaFormaWrap').classList.toggle('hidden', document.getElementById('taxaStatus').value !== 'paga');
   };
+  window.toggleFormaAcessorio = function(){
+    document.getElementById('acessorioFormaWrap').classList.toggle('hidden', document.getElementById('acessorioStatus').value !== 'pago');
+  };
 
   window.abrirOrdem = async function(){
     const numero41 = document.getElementById('ordemNumero41').value.trim();
@@ -1863,40 +1881,114 @@
     await renderOrdem(true);
   };
 
-  window.lancarProdutoOrdem = async function(){
+  // ---------- ACESSÓRIOS (pago / pendente) ----------
+  async function inserirLancamentoAcessorio(acessorio, dataRetroativaISOString){
+    const payload = {
+      ordem_id: currentOrdem.id, categoria:'produto', tipo:'entrada', forma_pagamento: acessorio.forma_pagamento,
+      valor: acessorio.valor, descricao: acessorio.produto, numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
+      criado_por_email: currentUserEmail, vendedor_email: currentOrdem.vendedor_email
+    };
+    if(dataRetroativaISOString) payload.criado_em = dataRetroativaISOString;
+    const { error } = await supabase.from('lancamentos').insert(payload);
+    if(error){ console.error(error); return false; }
+    return true;
+  }
+
+  window.adicionarAcessorio = async function(){
     if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
     const produto = document.getElementById('produtoTipo').value;
-    const forma = document.getElementById('produtoForma').value;
-    const valor = parseFloat(document.getElementById('produtoValor').value);
+    const valor = parseFloat(document.getElementById('acessorioValor').value);
+    const status = document.getElementById('acessorioStatus').value;
+    const forma = document.getElementById('acessorioForma').value;
     const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativaProduto') : null;
+    const diaAlterado = diaDoInputRetroativo('dataRetroativaProduto');
 
     if(!produto){ toast('Seleciona o produto'); return; }
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
-    if(!confirmarForma(valor, forma)) return;
+    if(status === 'pago' && !confirmarForma(valor, forma)) return;
 
-    const payload = {
-      ordem_id: currentOrdem.id, categoria:'produto', tipo:'entrada', forma_pagamento: forma,
-      valor, descricao: produto, numero41: currentOrdem.numero41, nosso_numero: currentOrdem.asc_job,
+    const { data: novo, error } = await supabase.from('acessorios_ordem').insert({
+      ordem_id: currentOrdem.id, produto, valor, status,
+      forma_pagamento: status === 'pago' ? forma : null,
       criado_por_email: currentUserEmail, vendedor_email: currentOrdem.vendedor_email
-    };
-    if(dataRetroativa) payload.criado_em = dataRetroativa;
+    }).select().single();
+    if(error){ toast('Erro ao adicionar acessório'); console.error(error); return; }
 
-    const { error } = await supabase.from('lancamentos').insert(payload);
-    if(error){ toast('Erro ao registrar'); console.error(error); return; }
-
-    await registrarLog('Vendeu produto na ordem', `${produto} de R$ ${valor} na ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
-
-    const diaAlterado = diaDoInputRetroativo('dataRetroativaProduto');
-    document.getElementById('produtoTipo').value = '';
-    document.getElementById('produtoValor').value = '';
-    document.getElementById('dataRetroativaProduto').value = '';
-    toast('Venda registrada');
-
-    if(dataRetroativa && forma === 'dinheiro'){
-      await cascatearSaldoDinheiro(diaAlterado);
+    if(status === 'pago'){
+      await inserirLancamentoAcessorio(novo, dataRetroativa);
+      if(dataRetroativa && forma === 'dinheiro'){
+        await cascatearSaldoDinheiro(diaAlterado);
+      }
     }
+
+    await registrarLog('Adicionou acessório', `${produto} de R$ ${valor} (${status}) na ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}`);
+
+    document.getElementById('produtoTipo').value = '';
+    document.getElementById('acessorioValor').value = '';
+    document.getElementById('dataRetroativaProduto').value = '';
+    toast('Acessório adicionado');
+    await carregarAcessoriosOrdem();
     await renderOrdem(true);
   };
+
+  window.marcarAcessorioPago = async function(id){
+    const forma = prompt('Forma de pagamento (dinheiro, pix, cartao ou cheque):', 'dinheiro');
+    if(!forma) return;
+    const formaValida = ['dinheiro','pix','cartao','cheque'].includes(forma.toLowerCase().trim());
+    if(!formaValida){ toast('Forma inválida — usa dinheiro, pix, cartao ou cheque'); return; }
+    const formaLimpa = forma.toLowerCase().trim();
+
+    const { data: acessorio, error: errBusca } = await supabase.from('acessorios_ordem').select('*').eq('id', id).single();
+    if(errBusca || !acessorio){ toast('Erro ao buscar acessório'); console.error(errBusca); return; }
+    if(!confirmarForma(acessorio.valor, formaLimpa)) return;
+
+    const { error } = await supabase.from('acessorios_ordem')
+      .update({ status: 'pago', forma_pagamento: formaLimpa }).eq('id', id);
+    if(error){ toast('Erro ao marcar como pago'); console.error(error); return; }
+
+    await inserirLancamentoAcessorio({ ...acessorio, forma_pagamento: formaLimpa }, null);
+    await registrarLog('Marcou acessório como pago', `${acessorio.produto} de R$ ${acessorio.valor} na ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}`);
+
+    toast('Acessório marcado como pago');
+    await carregarAcessoriosOrdem();
+    await renderOrdem(true);
+  };
+
+  window.excluirAcessorio = async function(id){
+    if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
+    if(!confirm('Excluir esse acessório? Isso não apaga o lançamento já gerado, se ele já tiver sido pago.')) return;
+    if(!(await pedirSenhaSensivel('Excluir acessório'))) return;
+    const { error } = await supabase.from('acessorios_ordem').delete().eq('id', id);
+    if(error){ toast('Erro ao excluir (confere se é master)'); console.error(error); return; }
+    await registrarLog('Excluiu acessório', `#${id} (ordem ${currentOrdem.numero41}/${currentOrdem.asc_job})`);
+    toast('Acessório excluído');
+    await carregarAcessoriosOrdem();
+  };
+
+  async function carregarAcessoriosOrdem(){
+    const { data: acessorios, error } = await supabase
+      .from('acessorios_ordem').select('*').eq('ordem_id', currentOrdem.id)
+      .order('criado_em', { ascending:true });
+    if(error){ console.error(error); return; }
+
+    const tbody = document.getElementById('acessoriosTabela');
+    tbody.innerHTML = '';
+    (acessorios || []).forEach(a => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${a.produto}</td>
+        <td>${fmt(a.valor)}</td>
+        <td>${a.status === 'pago' ? 'Pago' : 'Pendente'}</td>
+        <td>${a.forma_pagamento || '-'}</td>
+        <td>
+          ${a.status === 'pendente' ? `<button class="secondary" style="margin:0; padding:4px 10px; width:auto;" onclick="marcarAcessorioPago(${a.id})">marcar pago</button>` : ''}
+          ${currentUserRole === 'master' ? `<button class="del" onclick="excluirAcessorio(${a.id})">excluir</button>` : ''}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('acessoriosVazio').style.display = (acessorios || []).length ? 'none' : 'block';
+  }
 
   window.excluirLancamentoRelDia = async function(id, formaPagamento){
     if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
@@ -2043,6 +2135,9 @@
     toggleFormaTaxa();
     cancelarEdicaoPeca();
     await carregarPecasAprovadas();
+    document.getElementById('acessorioStatus').value = 'pendente';
+    toggleFormaAcessorio();
+    await carregarAcessoriosOrdem();
 
     const { data: lancamentos, error } = await supabase
       .from('lancamentos').select('*').eq('ordem_id', currentOrdem.id)
