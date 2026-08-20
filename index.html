@@ -117,6 +117,7 @@
       <div class="tab" id="tabCaixaBtn" onclick="mudarAba('caixa')">Caixa do dia</div>
       <div class="tab" id="tabOrdemBtn" onclick="mudarAba('ordem')">Ordem financeira</div>
       <div class="tab" id="tabRelBtn" onclick="mudarAba('relatorios')">Relatórios</div>
+      <div class="tab" id="tabGerenciarBtn" onclick="mudarAba('gerenciar')" style="display:none">Gerenciar</div>
     </div>
 
   <!-- ABA: CAIXA DO DIA -->
@@ -269,35 +270,6 @@
       <div class="empty" id="vendasVazio" style="display:none">Nenhuma venda hoje ainda.</div>
     </div>
 
-    <div class="card" id="cardGerenciarProdutos" style="display:none">
-      <h2>Gerenciar produtos (só master)</h2>
-      <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
-        Produtos daqui aparecem nos selects de venda (aba Vendas e Películas/acessórios
-        dentro de uma OS). "Lojista" é especial e não entra nessa lista. O "Grupo" é
-        usado só pro cálculo de comissão por excedente (Película / Fonte e Cabo).
-      </p>
-      <div class="row3">
-        <div>
-          <label>Nome do produto novo</label>
-          <input type="text" id="novoProdutoNome" placeholder="Ex: Capinha de silicone">
-        </div>
-        <div>
-          <label>Grupo (opcional)</label>
-          <select id="novoProdutoGrupo">
-            <option value="">Nenhum</option>
-            <option value="Pelicula">Película</option>
-            <option value="Fonte_Cabo">Fonte e Cabo</option>
-          </select>
-        </div>
-        <div style="display:flex; align-items:flex-end;">
-          <button style="margin:0" onclick="adicionarProduto()">Adicionar</button>
-        </div>
-      </div>
-      <table>
-        <thead><tr><th>Produto</th><th>Grupo</th><th></th></tr></thead>
-        <tbody id="listaProdutosTabela"></tbody>
-      </table>
-    </div>
   </div>
 
   <!-- ABA: ORDEM FINANCEIRA -->
@@ -445,27 +417,6 @@
         <input type="hidden" id="pecaEditandoId" value="">
         <button id="btnSalvarPeca" onclick="adicionarOuEditarPeca()">Adicionar peça</button>
         <button class="secondary" id="btnCancelarEdicaoPeca" style="display:none" onclick="cancelarEdicaoPeca()">Cancelar edição</button>
-      </div>
-
-      <div class="card" id="cardGerenciarDescricoesPecas" style="display:none">
-        <h2>Gerenciar descrições de peça (só master)</h2>
-        <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
-          Essas são só sugestões que aparecem ao digitar — o campo de descrição
-          sempre aceita texto livre também, mesmo sem estar nessa lista.
-        </p>
-        <div class="row2">
-          <div>
-            <label>Nova descrição</label>
-            <input type="text" id="novaDescricaoPeca" placeholder="Ex: Câmera traseira">
-          </div>
-          <div style="display:flex; align-items:flex-end;">
-            <button style="margin:0" onclick="adicionarDescricaoPeca()">Adicionar</button>
-          </div>
-        </div>
-        <table>
-          <thead><tr><th>Descrição</th><th></th></tr></thead>
-          <tbody id="listaDescricoesPecasTabela"></tbody>
-        </table>
       </div>
 
       <div class="card">
@@ -791,6 +742,60 @@
       </table>
     </div>
   </div>
+
+  <!-- ABA: GERENCIAR (só master) -->
+  <div id="abaGerenciar" class="hidden">
+    <div class="card" id="cardGerenciarProdutos">
+      <h2>Gerenciar produtos</h2>
+      <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+        Produtos daqui aparecem nos selects de venda (aba Vendas e Películas/acessórios
+        dentro de uma OS). "Lojista" é especial e não entra nessa lista. O "Grupo" é
+        usado só pro cálculo de comissão por excedente (Película / Fonte e Cabo).
+      </p>
+      <div class="row3">
+        <div>
+          <label>Nome do produto novo</label>
+          <input type="text" id="novoProdutoNome" placeholder="Ex: Capinha de silicone">
+        </div>
+        <div>
+          <label>Grupo (opcional)</label>
+          <select id="novoProdutoGrupo">
+            <option value="">Nenhum</option>
+            <option value="Pelicula">Película</option>
+            <option value="Fonte_Cabo">Fonte e Cabo</option>
+          </select>
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button style="margin:0" onclick="adicionarProduto()">Adicionar</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Produto</th><th>Grupo</th><th></th></tr></thead>
+        <tbody id="listaProdutosTabela"></tbody>
+      </table>
+    </div>
+
+    <div class="card" id="cardGerenciarDescricoesPecas">
+      <h2>Gerenciar descrições de peça</h2>
+      <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+        Essas são só sugestões que aparecem ao digitar — o campo de descrição
+        sempre aceita texto livre também, mesmo sem estar nessa lista.
+      </p>
+      <div class="row2">
+        <div>
+          <label>Nova descrição</label>
+          <input type="text" id="novaDescricaoPeca" placeholder="Ex: Câmera traseira">
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button style="margin:0" onclick="adicionarDescricaoPeca()">Adicionar</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Descrição</th><th></th></tr></thead>
+        <tbody id="listaDescricoesPecasTabela"></tbody>
+      </table>
+    </div>
+  </div>
   </div><!-- fecha appContent -->
 </div>
 
@@ -1055,8 +1060,7 @@
     document.getElementById('cardLogs').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('cardComissao').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('cardComissaoExcedente').style.display = ehMaster ? 'block' : 'none';
-    document.getElementById('cardGerenciarProdutos').style.display = ehMaster ? 'block' : 'none';
-    document.getElementById('cardGerenciarDescricoesPecas').style.display = ehMaster ? 'block' : 'none';
+    document.getElementById('tabGerenciarBtn').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaTaxa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaAvulso').style.display = ehMaster ? 'block' : 'none';
@@ -1180,10 +1184,12 @@
     document.getElementById('abaVendas').classList.toggle('hidden', aba !== 'vendas');
     document.getElementById('abaOrdem').classList.toggle('hidden', aba !== 'ordem');
     document.getElementById('abaRelatorios').classList.toggle('hidden', aba !== 'relatorios');
+    document.getElementById('abaGerenciar').classList.toggle('hidden', aba !== 'gerenciar');
     document.getElementById('tabCaixaBtn').classList.toggle('active', aba === 'caixa');
     document.getElementById('tabVendasBtn').classList.toggle('active', aba === 'vendas');
     document.getElementById('tabOrdemBtn').classList.toggle('active', aba === 'ordem');
     document.getElementById('tabRelBtn').classList.toggle('active', aba === 'relatorios');
+    document.getElementById('tabGerenciarBtn').classList.toggle('active', aba === 'gerenciar');
     if(aba === 'relatorios') carregarGraficoFaturamento();
     if(aba === 'vendas') carregarVendasHoje();
     if(aba === 'caixa') carregarCaixa();
