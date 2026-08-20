@@ -416,14 +416,56 @@
       </div>
 
       <div class="card">
-        <h2>Orçamento aprovado</h2>
+        <h2>Orçamento aprovado (peças)</h2>
         <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
-          Só registra o valor esperado do orçamento. O pagamento em si é lançado
-          na seção "Lançamento dentro da ordem", logo abaixo.
+          Cada peça aprovada é uma linha, com descrição obrigatória. O total soma
+          sozinho no "Valor esperado" da ordem. O pagamento em si é lançado na
+          seção "Lançamento dentro da ordem", logo abaixo.
         </p>
-        <label>Valor (R$)</label>
-        <input type="number" id="orcValor" step="0.01" placeholder="0,00">
-        <button class="secondary" onclick="salvarOrcamento()">Salvar orçamento aprovado</button>
+        <table>
+          <thead><tr><th>Descrição</th><th>Valor</th><th></th></tr></thead>
+          <tbody id="pecasTabela"></tbody>
+          <tfoot>
+            <tr><td style="font-weight:700;">Total</td><td id="pecasTotal" style="font-weight:700;">R$ 0,00</td><td></td></tr>
+          </tfoot>
+        </table>
+        <div class="empty" id="pecasVazio" style="display:none">Nenhuma peça aprovada ainda.</div>
+
+        <div class="row2" style="margin-top:16px;">
+          <div>
+            <label>Descrição (obrigatória)</label>
+            <input type="text" id="pecaDescricao" list="descricoesPecasList" placeholder="Ex: Tela, Bateria, Placa...">
+            <datalist id="descricoesPecasList"></datalist>
+          </div>
+          <div>
+            <label>Valor (R$)</label>
+            <input type="number" id="pecaValor" step="0.01" placeholder="0,00">
+          </div>
+        </div>
+        <input type="hidden" id="pecaEditandoId" value="">
+        <button id="btnSalvarPeca" onclick="adicionarOuEditarPeca()">Adicionar peça</button>
+        <button class="secondary" id="btnCancelarEdicaoPeca" style="display:none" onclick="cancelarEdicaoPeca()">Cancelar edição</button>
+      </div>
+
+      <div class="card" id="cardGerenciarDescricoesPecas" style="display:none">
+        <h2>Gerenciar descrições de peça (só master)</h2>
+        <p class="sub" style="margin-top:-8px; margin-bottom:14px;">
+          Essas são só sugestões que aparecem ao digitar — o campo de descrição
+          sempre aceita texto livre também, mesmo sem estar nessa lista.
+        </p>
+        <div class="row2">
+          <div>
+            <label>Nova descrição</label>
+            <input type="text" id="novaDescricaoPeca" placeholder="Ex: Câmera traseira">
+          </div>
+          <div style="display:flex; align-items:flex-end;">
+            <button style="margin:0" onclick="adicionarDescricaoPeca()">Adicionar</button>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>Descrição</th><th></th></tr></thead>
+          <tbody id="listaDescricoesPecasTabela"></tbody>
+        </table>
       </div>
 
       <div class="card">
@@ -1014,6 +1056,7 @@
     document.getElementById('cardComissao').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('cardComissaoExcedente').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('cardGerenciarProdutos').style.display = ehMaster ? 'block' : 'none';
+    document.getElementById('cardGerenciarDescricoesPecas').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaTaxa').style.display = ehMaster ? 'block' : 'none';
     document.getElementById('blocoDataRetroativaAvulso').style.display = ehMaster ? 'block' : 'none';
@@ -1022,6 +1065,7 @@
 
     await carregarListaVendedores();
     await carregarListaProdutos();
+    await carregarListaDescricoesPecas();
     atualizarOpcoesNatureza();
     carregarVendasHoje();
   }
@@ -1635,20 +1679,146 @@
     await renderOrdem(true);
   };
 
-  window.salvarOrcamento = async function(){
+  // ---------- PEÇAS APROVADAS (orçamento por item) ----------
+  async function recalcularOrcamentoOrdem(ordemId){
+    const { data, error } = await supabase.from('pecas_aprovadas').select('valor').eq('ordem_id', ordemId);
+    if(error){ console.error(error); return 0; }
+    const total = (data || []).reduce((soma, p) => soma + Number(p.valor), 0);
+    await supabase.from('ordens_financeiras').update({ orcamento_valor: total, orcamento_status: 'pendente' }).eq('id', ordemId);
+    if(currentOrdem && currentOrdem.id === ordemId){ currentOrdem.orcamento_valor = total; currentOrdem.orcamento_status = 'pendente'; }
+    return total;
+  }
+
+  async function carregarPecasAprovadas(){
+    const { data: pecas, error } = await supabase
+      .from('pecas_aprovadas').select('*').eq('ordem_id', currentOrdem.id)
+      .order('criado_em', { ascending:true });
+    if(error){ console.error(error); return; }
+
+    const tbody = document.getElementById('pecasTabela');
+    tbody.innerHTML = '';
+    let total = 0;
+
+    (pecas || []).forEach(p => {
+      total += Number(p.valor);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${p.descricao}</td>
+        <td>${fmt(p.valor)}</td>
+        <td>
+          <button class="secondary" style="margin:0; padding:4px 10px; width:auto;" onclick='editarPeca(${p.id}, ${JSON.stringify(p.descricao)}, ${p.valor})'>editar</button>
+          ${currentUserRole === 'master' ? `<button class="del" onclick="excluirPeca(${p.id})">excluir</button>` : ''}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('pecasTotal').textContent = fmt(total);
+    document.getElementById('pecasVazio').style.display = (pecas || []).length ? 'none' : 'block';
+  }
+
+  window.adicionarOuEditarPeca = async function(){
     if(currentOrdem.status === 'cancelada'){ toast('Ordem cancelada — reabra pra continuar'); return; }
-    const valor = parseFloat(document.getElementById('orcValor').value) || 0;
+    const descricao = document.getElementById('pecaDescricao').value.trim();
+    const valor = parseFloat(document.getElementById('pecaValor').value);
+    const editandoId = document.getElementById('pecaEditandoId').value;
 
-    const { error } = await supabase.from('ordens_financeiras')
-      .update({ orcamento_valor: valor, orcamento_status: 'pendente' })
-      .eq('id', currentOrdem.id);
-    if(error){ toast('Erro ao salvar orçamento'); console.error(error); return; }
+    if(!descricao){ toast('Descrição é obrigatória'); return; }
+    if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
 
-    await registrarLog('Salvou orçamento', `Ordem ${currentOrdem.numero41}/${currentOrdem.asc_job}: R$ ${valor} (valor esperado)`);
-    toast('Orçamento salvo');
-    currentOrdem.orcamento_valor = valor;
-    currentOrdem.orcamento_status = 'pendente';
+    let error;
+    if(editandoId){
+      ({ error } = await supabase.from('pecas_aprovadas').update({ descricao, valor }).eq('id', editandoId));
+    } else {
+      ({ error } = await supabase.from('pecas_aprovadas').insert({
+        ordem_id: currentOrdem.id, descricao, valor, criado_por_email: currentUserEmail
+      }));
+    }
+    if(error){ toast('Erro ao salvar peça'); console.error(error); return; }
+
+    await registrarLog(editandoId ? 'Editou peça aprovada' : 'Adicionou peça aprovada', `${descricao}: R$ ${valor} (ordem ${currentOrdem.numero41}/${currentOrdem.asc_job})`);
+    await recalcularOrcamentoOrdem(currentOrdem.id);
+
+    cancelarEdicaoPeca();
+    toast(editandoId ? 'Peça atualizada' : 'Peça adicionada');
+    await carregarPecasAprovadas();
     await renderOrdem(true);
+  };
+
+  window.editarPeca = function(id, descricao, valor){
+    document.getElementById('pecaDescricao').value = descricao;
+    document.getElementById('pecaValor').value = valor;
+    document.getElementById('pecaEditandoId').value = id;
+    document.getElementById('btnSalvarPeca').textContent = 'Salvar edição';
+    document.getElementById('btnCancelarEdicaoPeca').style.display = 'inline-block';
+    document.getElementById('pecaDescricao').focus();
+  };
+
+  window.cancelarEdicaoPeca = function(){
+    document.getElementById('pecaDescricao').value = '';
+    document.getElementById('pecaValor').value = '';
+    document.getElementById('pecaEditandoId').value = '';
+    document.getElementById('btnSalvarPeca').textContent = 'Adicionar peça';
+    document.getElementById('btnCancelarEdicaoPeca').style.display = 'none';
+  };
+
+  window.excluirPeca = async function(id){
+    if(currentUserRole !== 'master'){ toast('Só master pode excluir'); return; }
+    if(!confirm('Excluir essa peça aprovada?')) return;
+    if(!(await pedirSenhaSensivel('Excluir peça aprovada'))) return;
+    const { error } = await supabase.from('pecas_aprovadas').delete().eq('id', id);
+    if(error){ toast('Erro ao excluir (confere se é master)'); console.error(error); return; }
+    await registrarLog('Excluiu peça aprovada', `#${id} (ordem ${currentOrdem.numero41}/${currentOrdem.asc_job})`);
+    await recalcularOrcamentoOrdem(currentOrdem.id);
+    toast('Peça excluída');
+    await carregarPecasAprovadas();
+    await renderOrdem(true);
+  };
+
+  // ---------- CATÁLOGO DE DESCRIÇÕES DE PEÇA ----------
+  let listaDescricoesPecas = [];
+
+  async function carregarListaDescricoesPecas(){
+    const { data, error } = await supabase.from('descricoes_pecas').select('*').order('nome');
+    if(error){ console.error(error); return; }
+    listaDescricoesPecas = data || [];
+
+    const datalist = document.getElementById('descricoesPecasList');
+    if(datalist) datalist.innerHTML = listaDescricoesPecas.map(d => `<option value="${d.nome}">`).join('');
+
+    const tbody = document.getElementById('listaDescricoesPecasTabela');
+    if(tbody){
+      tbody.innerHTML = '';
+      listaDescricoesPecas.forEach(d => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${d.nome}</td><td><button class="del" onclick="removerDescricaoPeca(${d.id})">remover</button></td>`;
+        tbody.appendChild(tr);
+      });
+    }
+  }
+
+  window.adicionarDescricaoPeca = async function(){
+    const nome = document.getElementById('novaDescricaoPeca').value.trim();
+    if(!nome){ toast('Digita a descrição'); return; }
+    const { error } = await supabase.from('descricoes_pecas').insert({ nome });
+    if(error){
+      if(error.code === '23505'){ toast('Essa descrição já existe'); }
+      else { toast('Erro ao adicionar'); console.error(error); }
+      return;
+    }
+    await registrarLog('Adicionou descrição de peça', nome);
+    document.getElementById('novaDescricaoPeca').value = '';
+    toast('Descrição adicionada');
+    await carregarListaDescricoesPecas();
+  };
+
+  window.removerDescricaoPeca = async function(id){
+    if(!confirm('Remover essa descrição da lista de sugestões? Peças já lançadas não são afetadas.')) return;
+    const { error } = await supabase.from('descricoes_pecas').delete().eq('id', id);
+    if(error){ toast('Erro ao remover (confere se é master)'); console.error(error); return; }
+    await registrarLog('Removeu descrição de peça', `#${id}`);
+    toast('Descrição removida');
+    await carregarListaDescricoesPecas();
   };
 
   window.lancarAvulsoOrdem = async function(){
@@ -1865,7 +2035,8 @@
     document.getElementById('taxaValor').value = currentOrdem.taxa_analise_valor || '';
     document.getElementById('taxaStatus').value = currentOrdem.taxa_analise_status || 'pendente';
     toggleFormaTaxa();
-    document.getElementById('orcValor').value = currentOrdem.orcamento_valor || '';
+    cancelarEdicaoPeca();
+    await carregarPecasAprovadas();
 
     const { data: lancamentos, error } = await supabase
       .from('lancamentos').select('*').eq('ordem_id', currentOrdem.id)
