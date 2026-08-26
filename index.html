@@ -1990,7 +1990,7 @@
     const { data: acessorios, error } = await supabase
       .from('acessorios_ordem').select('*').eq('ordem_id', currentOrdem.id)
       .order('criado_em', { ascending:true });
-    if(error){ console.error(error); return; }
+    if(error){ console.error(error); return 0; }
 
     const tbody = document.getElementById('acessoriosTabela');
     tbody.innerHTML = '';
@@ -2009,6 +2009,10 @@
       tbody.appendChild(tr);
     });
     document.getElementById('acessoriosVazio').style.display = (acessorios || []).length ? 'none' : 'block';
+
+    return (acessorios || [])
+      .filter(a => a.status === 'pendente')
+      .reduce((soma, a) => soma + Number(a.valor || 0), 0);
   }
 
   window.excluirLancamentoRelDia = async function(id, formaPagamento){
@@ -2158,7 +2162,7 @@
     await carregarPecasAprovadas();
     document.getElementById('acessorioStatus').value = 'pendente';
     toggleFormaAcessorio();
-    await carregarAcessoriosOrdem();
+    const acessoriosPendentesValor = await carregarAcessoriosOrdem();
 
     const { data: lancamentos, error } = await supabase
       .from('lancamentos').select('*').eq('ordem_id', currentOrdem.id)
@@ -2186,7 +2190,7 @@
 
     const orcamentoValor = Number(currentOrdem.orcamento_valor || 0);
     const taxaValor = Number(currentOrdem.taxa_analise_valor || 0);
-    const esperado = orcamentoValor > 0 ? orcamentoValor : taxaValor;
+    const esperado = (orcamentoValor > 0 ? orcamentoValor : taxaValor) + acessoriosPendentesValor;
     const pendente = esperado - recebido;
     document.getElementById('ordemEsperado').textContent = fmt(esperado);
     document.getElementById('ordemRecebido').textContent = fmt(recebido);
@@ -2722,16 +2726,27 @@
       .from('lancamentos').select('ordem_id, tipo, valor').not('ordem_id', 'is', null);
     if(errL){ toast('Erro ao consultar lançamentos'); console.error(errL); return; }
 
+    const { data: acessorios, error: errA } = await supabase
+      .from('acessorios_ordem').select('ordem_id, valor').eq('status', 'pendente');
+    if(errA){ toast('Erro ao consultar acessórios'); console.error(errA); return; }
+
     const recebidoPorOrdem = {};
     (lancs || []).forEach(l => {
       const atual = recebidoPorOrdem[l.ordem_id] || 0;
       recebidoPorOrdem[l.ordem_id] = atual + (l.tipo === 'entrada' ? Number(l.valor) : -Number(l.valor));
     });
 
+    const acessoriosPendentesPorOrdem = {};
+    (acessorios || []).forEach(a => {
+      const atual = acessoriosPendentesPorOrdem[a.ordem_id] || 0;
+      acessoriosPendentesPorOrdem[a.ordem_id] = atual + Number(a.valor || 0);
+    });
+
     const pendentes = (ordens || []).map(o => {
       const orcamentoValor = Number(o.orcamento_valor || 0);
       const taxaValor = Number(o.taxa_analise_valor || 0);
-      const esperado = orcamentoValor > 0 ? orcamentoValor : taxaValor;
+      const acessoriosValor = acessoriosPendentesPorOrdem[o.id] || 0;
+      const esperado = (orcamentoValor > 0 ? orcamentoValor : taxaValor) + acessoriosValor;
       const recebido = recebidoPorOrdem[o.id] || 0;
       return { ...o, esperado, recebido, pendente: esperado - recebido };
     }).filter(o => o.pendente > 0.01 && o.status !== 'cancelada')
