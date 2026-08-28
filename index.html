@@ -237,7 +237,7 @@
       <div class="row3">
         <div>
           <label>Produto</label>
-          <select id="vendaProduto">
+          <select id="vendaProduto" onchange="toggleComentarioVendaObrigatorio()">
             <option value="">Selecione o produto</option>
           </select>
         </div>
@@ -257,6 +257,8 @@
       </div>
       <label>Vendedor (obrigatório)</label>
       <select id="vendedorVenda"><option value="">Selecione o vendedor</option></select>
+      <label id="labelVendaComentario">Comentário</label>
+      <input type="text" id="vendaComentario" placeholder="Ex: tela iPhone 12, capinha transparente...">
       <div id="blocoDataRetroativaVenda" style="display:none">
         <label>Data/hora do lançamento (deixe em branco = agora)</label>
         <input type="datetime-local" id="dataRetroativaVenda">
@@ -1397,23 +1399,32 @@
   };
 
   // ---------- VENDAS ----------
+  window.toggleComentarioVendaObrigatorio = function(){
+    const produto = document.getElementById('vendaProduto').value;
+    const label = document.getElementById('labelVendaComentario');
+    label.textContent = produto === 'Lojista' ? 'Comentário (obrigatório para Lojista)' : 'Comentário';
+  };
+
   window.lancarVenda = async function(){
     const produto = document.getElementById('vendaProduto').value;
     const forma = document.getElementById('vendaForma').value;
     const valor = parseFloat(document.getElementById('vendaValor').value);
     const vendedor = document.getElementById('vendedorVenda').value;
+    const comentario = document.getElementById('vendaComentario').value.trim();
     const dataRetroativa = currentUserRole === 'master' ? dataRetroativaISO('dataRetroativaVenda') : null;
 
     if(!produto){ toast('Seleciona o produto'); return; }
     if(!valor || valor <= 0){ toast('Preenche o valor'); return; }
     if(!vendedor){ toast('Seleciona o vendedor'); return; }
+    if(produto === 'Lojista' && !comentario){ toast('Descreve o que foi vendido pro lojista'); return; }
     if(!confirmarForma(valor, forma)) return;
 
     const categoria = produto === 'Lojista' ? 'lojista' : 'venda_avulsa';
+    const descricao = comentario ? `${produto} — ${comentario}` : produto;
 
     const payload = {
       numero41: null, nosso_numero: null, ordem_id: null, categoria, tipo: 'entrada',
-      forma_pagamento: forma, valor, descricao: produto,
+      forma_pagamento: forma, valor, descricao,
       criado_por_email: currentUserEmail, vendedor_email: vendedor
     };
     if(dataRetroativa) payload.criado_em = dataRetroativa;
@@ -1421,12 +1432,14 @@
     const { error } = await supabase.from('lancamentos').insert(payload);
     if(error){ toast('Erro ao registrar'); console.error(error); return; }
 
-    await registrarLog('Registrou venda', `${produto} de R$ ${valor} via ${forma}, vendedor ${vendedor}${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
+    await registrarLog('Registrou venda', `${descricao} de R$ ${valor} via ${forma}, vendedor ${vendedor}${dataRetroativa ? ' — data retroativa: ' + dataRetroativa : ''}`);
 
     const diaAlterado = diaDoInputRetroativo('dataRetroativaVenda');
     document.getElementById('vendaProduto').value = '';
     document.getElementById('vendaValor').value = '';
+    document.getElementById('vendaComentario').value = '';
     document.getElementById('dataRetroativaVenda').value = '';
+    toggleComentarioVendaObrigatorio();
     toast('Venda registrada');
 
     if(dataRetroativa && forma === 'dinheiro'){
@@ -1452,7 +1465,7 @@
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${hora}</td>
-        <td>${l.descricao}${l.categoria === 'lojista' ? ' (Lojista)' : ''}</td>
+        <td>${l.descricao}</td>
         <td>${l.vendedor_email || '—'}</td>
         <td>${l.forma_pagamento}</td>
         <td class="valor entrada">${fmt(l.valor)}</td>
