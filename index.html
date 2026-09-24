@@ -743,6 +743,7 @@
             <tr><td colspan="5" style="text-align:right; font-weight:700;">Comissão total</td><td id="excedenteTotalGeral" style="font-weight:700;">R$ 0,00</td></tr>
           </tfoot>
         </table>
+        <p class="sub" id="excedenteNota" style="margin-top:8px;"></p>
       </div>
 
       <h3 style="margin-top:24px; margin-bottom:8px; font-size:15px;">Baselines desse vendedor</h3>
@@ -2443,6 +2444,67 @@
   let dadosComissaoAtual = null;
   function nomesProdutosAtuais(){ return listaProdutos.map(p => p.nome); }
 
+  // Nome do produto de um lançamento de venda. A venda avulsa com comentário
+  // grava "Produto — comentário" (lancarVenda); comparar a descrição inteira com
+  // o nome do produto fazia essas vendas sumirem de Película / Fonte e Cabo.
+  function produtoDoLancamento(descricao){
+    const texto = String(descricao || '');
+    if(listaProdutos.some(p => p.nome === texto)) return texto;
+    const antesDoComentario = texto.split(' — ')[0];
+    return listaProdutos.some(p => p.nome === antesDoComentario) ? antesDoComentario : null;
+  }
+
+  // Película/fonte de O.S cobrada junto com o conserto: o atendente lança um
+  // pagamento só ("PG") e o acessório fica "pendente". Se o dinheiro do conserto
+  // (tudo da ordem menos o que já entrou como acessório pago) cobre o orçamento
+  // + os acessórios pendentes, a O.S está quitada e o acessório foi pago ali
+  // dentro. Conta no mês e pro vendedor do pagamento que quitou a O.S.
+  // É recalculado a cada consulta: se o valor da O.S mudar e ela voltar a ter
+  // saldo, o acessório deixa de contar até ser pago.
+  async function acessoriosPagosNoPagamentoDaOS(lancamentosDoVendedor, vendedor, inicio, fim){
+    const idsOrdens = [...new Set(lancamentosDoVendedor
+      .filter(l => l.ordem_id && l.categoria !== 'produto')
+      .map(l => l.ordem_id))];
+    if(!idsOrdens.length) return [];
+
+    const { data: pendentes, error: errA } = await supabase
+      .from('acessorios_ordem').select('ordem_id, produto, valor')
+      .in('ordem_id', idsOrdens).eq('status', 'pendente');
+    if(errA){ console.error(errA); return []; }
+    const idsComPendente = [...new Set((pendentes || []).map(a => a.ordem_id))];
+    if(!idsComPendente.length) return [];
+
+    const [{ data: ordens, error: errO }, { data: lancs, error: errL }] = await Promise.all([
+      supabase.from('ordens_financeiras').select('id, asc_job, orcamento_valor, taxa_analise_valor, status').in('id', idsComPendente),
+      supabase.from('lancamentos').select('id, ordem_id, categoria, tipo, valor, criado_em, vendedor_email').in('ordem_id', idsComPendente)
+    ]);
+    if(errO || errL){ console.error(errO || errL); return []; }
+
+    const resultado = [];
+    (ordens || []).forEach(o => {
+      if(o.status === 'cancelada') return;
+      const acessorios = pendentes.filter(a => a.ordem_id === o.id);
+      const orcamento = Number(o.orcamento_valor || 0);
+      const base = orcamento > 0 ? orcamento : Number(o.taxa_analise_valor || 0);
+      const alvo = base + acessorios.reduce((s, a) => s + Number(a.valor || 0), 0);
+
+      const pagamentos = (lancs || [])
+        .filter(l => l.ordem_id === o.id && l.categoria !== 'produto')
+        .sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
+      let acumulado = 0, quitacao = null;
+      pagamentos.forEach(l => {
+        const antes = acumulado;
+        acumulado += l.tipo === 'entrada' ? Number(l.valor) : -Number(l.valor);
+        if(antes < alvo - 0.01 && acumulado >= alvo - 0.01) quitacao = l;
+      });
+      if(!quitacao || acumulado < alvo - 0.01) return;
+      const quando = new Date(quitacao.criado_em);
+      if(quitacao.vendedor_email !== vendedor || quando < inicio || quando >= fim) return;
+      acessorios.forEach(a => resultado.push({ asc_job: o.asc_job, produto: a.produto, valor: Number(a.valor || 0) }));
+    });
+    return resultado;
+  }
+
   window.consultarComissao = async function(){
     const vendedor = document.getElementById('comissaoVendedor').value;
     const de = document.getElementById('comissaoDe').value;
@@ -2467,7 +2529,8 @@
       const valor = Number(l.valor);
       qtd++;
       if((l.ordem_id && l.categoria === 'produto') || l.categoria === 'venda_avulsa'){
-        if(porProduto.hasOwnProperty(l.descricao)) porProduto[l.descricao] += valor;
+        const produto = produtoDoLancamento(l.descricao);
+        if(produto && porProduto.hasOwnProperty(produto)) porProduto[produto] += valor;
         else outrosProdutos += valor;
       } else if(l.categoria === 'lojista'){
         lojista += valor;
@@ -2476,6 +2539,14 @@
       } else if(l.natureza !== 'aporte'){
         vendasGerais += valor;
       }
+    });
+
+    // Acessório cobrado junto no pagamento da O.S sai de Serviço e vai pro produto.
+    const pagosNaOS = await acessoriosPagosNoPagamentoDaOS(lancamentos || [], vendedor, inicioDia(de), fimDia(ate));
+    pagosNaOS.forEach(a => {
+      servico -= a.valor;
+      if(porProduto.hasOwnProperty(a.produto)) porProduto[a.produto] += a.valor;
+      else outrosProdutos += a.valor;
     });
 
     const totalProdutos = Object.values(porProduto).reduce((a,b) => a+b, 0) + outrosProdutos;
@@ -2598,12 +2669,25 @@
       if(l.ordem_id && l.categoria !== 'produto'){ servico += valor; return; }
 
       if((l.ordem_id && l.categoria === 'produto') || l.categoria === 'venda_avulsa'){
-        const grupo = gruposPorNome[l.descricao];
+        const grupo = gruposPorNome[produtoDoLancamento(l.descricao)];
         if(grupo === 'Pelicula'){ pelicula += valor; }
         else if(grupo === 'Fonte_Cabo'){ fonteCabo += valor; }
         else if(l.categoria === 'venda_avulsa'){ vendasGerais += valor; }
       }
     });
+
+    // Película/fonte cobrada junto no pagamento da O.S: sai de Serviço e vai pro grupo dela.
+    const pagosNaOS = (await acessoriosPagosNoPagamentoDaOS(lancamentos || [], vendedor, periodo.inicio, periodo.fim))
+      .filter(a => gruposPorNome[a.produto] === 'Pelicula' || gruposPorNome[a.produto] === 'Fonte_Cabo');
+    pagosNaOS.forEach(a => {
+      servico -= a.valor;
+      if(gruposPorNome[a.produto] === 'Pelicula') pelicula += a.valor; else fonteCabo += a.valor;
+    });
+    const somaPagosNaOS = pagosNaOS.reduce((s, a) => s + a.valor, 0);
+    document.getElementById('excedenteNota').textContent = pagosNaOS.length
+      ? `Inclui ${fmt(somaPagosNaOS)} de película/fonte cobradas junto com o conserto (O.S quitada): ` +
+        pagosNaOS.map(a => `${a.asc_job} ${a.produto} ${fmt(a.valor)}`).join('; ') + '.'
+      : '';
 
     const faturamentoPorCategoria = { servico, vendas_gerais: vendasGerais, pelicula, fonte_cabo: fonteCabo };
     const baselines = await buscarBaselinesAtuais(vendedor);
