@@ -2454,53 +2454,72 @@
     return listaProdutos.some(p => p.nome === antesDoComentario) ? antesDoComentario : null;
   }
 
-  // Película/fonte de O.S cobrada junto com o conserto: o atendente lança um
+  // Acessório de O.S (película, fonte...) conta pra QUEM LANÇOU o acessório
+  // (acessorios_ordem.criado_por_email), não pro vendedor da O.S — regra do
+  // Emanuel (24/09/2026). O lançamento de caixa do acessório guarda o vendedor
+  // da O.S, então cada lançamento 'produto' é casado com o acessório dele (mesma
+  // O.S, produto e valor, na ordem em que foram criados).
+  //
+  // Também pega o acessório cobrado junto com o conserto: o atendente lança um
   // pagamento só ("PG") e o acessório fica "pendente". Se o dinheiro do conserto
-  // (tudo da ordem menos o que já entrou como acessório pago) cobre o orçamento
-  // + os acessórios pendentes, a O.S está quitada e o acessório foi pago ali
-  // dentro. Conta no mês e pro vendedor do pagamento que quitou a O.S.
-  // É recalculado a cada consulta: se o valor da O.S mudar e ela voltar a ter
-  // saldo, o acessório deixa de contar até ser pago.
-  async function acessoriosPagosNoPagamentoDaOS(lancamentosDoVendedor, vendedor, inicio, fim){
-    const idsOrdens = [...new Set(lancamentosDoVendedor
-      .filter(l => l.ordem_id && l.categoria !== 'produto')
-      .map(l => l.ordem_id))];
+  // (tudo da O.S menos acessório pago) cobre o orçamento + os acessórios
+  // pendentes, a O.S está quitada e o acessório foi pago ali dentro. Conta no
+  // mês do pagamento que quitou; esse dinheiro está no Serviço de quem é o
+  // vendedor desse pagamento (vendedorDoPagamento). Recalcula a cada consulta:
+  // se o valor da O.S mudar e sobrar saldo, o acessório deixa de contar.
+  // Acessório pendente de O.S sem quitar não gera comissão.
+  async function acessoriosDeOSNoPeriodo(inicio, fim){
+    const { data: lancsPeriodo, error } = await supabase
+      .from('lancamentos').select('ordem_id')
+      .not('ordem_id', 'is', null)
+      .gte('criado_em', inicio.toISOString())
+      .lt('criado_em', fim.toISOString());
+    if(error){ console.error(error); return []; }
+    const idsOrdens = [...new Set((lancsPeriodo || []).map(l => l.ordem_id))];
     if(!idsOrdens.length) return [];
 
-    const { data: pendentes, error: errA } = await supabase
-      .from('acessorios_ordem').select('ordem_id, produto, valor')
-      .in('ordem_id', idsOrdens).eq('status', 'pendente');
-    if(errA){ console.error(errA); return []; }
-    const idsComPendente = [...new Set((pendentes || []).map(a => a.ordem_id))];
-    if(!idsComPendente.length) return [];
-
-    const [{ data: ordens, error: errO }, { data: lancs, error: errL }] = await Promise.all([
-      supabase.from('ordens_financeiras').select('id, asc_job, orcamento_valor, taxa_analise_valor, status').in('id', idsComPendente),
-      supabase.from('lancamentos').select('id, ordem_id, categoria, tipo, valor, criado_em, vendedor_email').in('ordem_id', idsComPendente)
+    const [{ data: ordens, error: errO }, { data: acessorios, error: errA }, { data: lancs, error: errL }] = await Promise.all([
+      supabase.from('ordens_financeiras').select('id, asc_job, orcamento_valor, taxa_analise_valor, status').in('id', idsOrdens),
+      supabase.from('acessorios_ordem').select('id, ordem_id, produto, valor, status, criado_em, criado_por_email').in('ordem_id', idsOrdens),
+      supabase.from('lancamentos').select('id, ordem_id, categoria, tipo, valor, descricao, criado_em, criado_por_email, vendedor_email').in('ordem_id', idsOrdens)
     ]);
-    if(errO || errL){ console.error(errO || errL); return []; }
+    if(errO || errA || errL){ console.error(errO || errA || errL); return []; }
 
+    const porData = (a, b) => new Date(a.criado_em) - new Date(b.criado_em);
+    const noPeriodo = l => { const d = new Date(l.criado_em); return d >= inicio && d < fim; };
     const resultado = [];
     (ordens || []).forEach(o => {
+      const acessoriosDela = (acessorios || []).filter(a => a.ordem_id === o.id).sort(porData);
+      const lancsDela = (lancs || []).filter(l => l.ordem_id === o.id).sort(porData);
+
+      // Acessório pago: cada lançamento 'produto' casa com um acessório pago.
+      const pagos = acessoriosDela.filter(a => a.status === 'pago');
+      lancsDela.filter(l => l.categoria === 'produto' && l.tipo === 'entrada').forEach(l => {
+        const i = pagos.findIndex(a => a.produto === l.descricao && Math.abs(Number(a.valor) - Number(l.valor)) < 0.01);
+        const acessorio = i >= 0 ? pagos.splice(i, 1)[0] : null;
+        if(!noPeriodo(l)) return;
+        resultado.push({ asc_job: o.asc_job, produto: l.descricao, valor: Number(l.valor),
+          lancou: (acessorio && acessorio.criado_por_email) || l.criado_por_email || l.vendedor_email,
+          noPagamentoDaOS: false });
+      });
+
+      // Acessório pendente cobrado junto no pagamento da O.S quitada.
       if(o.status === 'cancelada') return;
-      const acessorios = pendentes.filter(a => a.ordem_id === o.id);
+      const pendentes = acessoriosDela.filter(a => a.status === 'pendente');
+      if(!pendentes.length) return;
       const orcamento = Number(o.orcamento_valor || 0);
       const base = orcamento > 0 ? orcamento : Number(o.taxa_analise_valor || 0);
-      const alvo = base + acessorios.reduce((s, a) => s + Number(a.valor || 0), 0);
-
-      const pagamentos = (lancs || [])
-        .filter(l => l.ordem_id === o.id && l.categoria !== 'produto')
-        .sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
+      const alvo = base + pendentes.reduce((s, a) => s + Number(a.valor || 0), 0);
       let acumulado = 0, quitacao = null;
-      pagamentos.forEach(l => {
+      lancsDela.filter(l => l.categoria !== 'produto').forEach(l => {
         const antes = acumulado;
         acumulado += l.tipo === 'entrada' ? Number(l.valor) : -Number(l.valor);
         if(antes < alvo - 0.01 && acumulado >= alvo - 0.01) quitacao = l;
       });
-      if(!quitacao || acumulado < alvo - 0.01) return;
-      const quando = new Date(quitacao.criado_em);
-      if(quitacao.vendedor_email !== vendedor || quando < inicio || quando >= fim) return;
-      acessorios.forEach(a => resultado.push({ asc_job: o.asc_job, produto: a.produto, valor: Number(a.valor || 0) }));
+      if(!quitacao || acumulado < alvo - 0.01 || !noPeriodo(quitacao)) return;
+      pendentes.forEach(a => resultado.push({ asc_job: o.asc_job, produto: a.produto, valor: Number(a.valor || 0),
+        lancou: a.criado_por_email || quitacao.vendedor_email,
+        noPagamentoDaOS: true, vendedorDoPagamento: quitacao.vendedor_email }));
     });
     return resultado;
   }
@@ -2526,9 +2545,10 @@
     nomesProdutosAtuais().forEach(p => porProduto[p] = 0);
 
     (lancamentos || []).forEach(l => {
+      if(l.ordem_id && l.categoria === 'produto') return; // acessório de O.S: conta pra quem lançou (abaixo)
       const valor = Number(l.valor);
       qtd++;
-      if((l.ordem_id && l.categoria === 'produto') || l.categoria === 'venda_avulsa'){
+      if(l.categoria === 'venda_avulsa'){
         const produto = produtoDoLancamento(l.descricao);
         if(produto && porProduto.hasOwnProperty(produto)) porProduto[produto] += valor;
         else outrosProdutos += valor;
@@ -2541,10 +2561,13 @@
       }
     });
 
-    // Acessório cobrado junto no pagamento da O.S sai de Serviço e vai pro produto.
-    const pagosNaOS = await acessoriosPagosNoPagamentoDaOS(lancamentos || [], vendedor, inicioDia(de), fimDia(ate));
-    pagosNaOS.forEach(a => {
-      servico -= a.valor;
+    // Acessório de O.S vai pra quem lançou; o cobrado junto no pagamento da O.S
+    // sai do Serviço de quem recebeu esse pagamento.
+    const acessoriosOS = await acessoriosDeOSNoPeriodo(inicioDia(de), fimDia(ate));
+    acessoriosOS.forEach(a => {
+      if(a.noPagamentoDaOS && a.vendedorDoPagamento === vendedor) servico -= a.valor;
+      if(a.lancou !== vendedor) return;
+      if(!a.noPagamentoDaOS) qtd++;
       if(porProduto.hasOwnProperty(a.produto)) porProduto[a.produto] += a.valor;
       else outrosProdutos += a.valor;
     });
@@ -2668,25 +2691,30 @@
 
       if(l.ordem_id && l.categoria !== 'produto'){ servico += valor; return; }
 
-      if((l.ordem_id && l.categoria === 'produto') || l.categoria === 'venda_avulsa'){
+      // Acessório de O.S conta pra quem lançou (abaixo), não pro vendedor da O.S.
+      if(l.categoria === 'venda_avulsa'){
         const grupo = gruposPorNome[produtoDoLancamento(l.descricao)];
         if(grupo === 'Pelicula'){ pelicula += valor; }
         else if(grupo === 'Fonte_Cabo'){ fonteCabo += valor; }
-        else if(l.categoria === 'venda_avulsa'){ vendasGerais += valor; }
+        else { vendasGerais += valor; }
       }
     });
 
-    // Película/fonte cobrada junto no pagamento da O.S: sai de Serviço e vai pro grupo dela.
-    const pagosNaOS = (await acessoriosPagosNoPagamentoDaOS(lancamentos || [], vendedor, periodo.inicio, periodo.fim))
-      .filter(a => gruposPorNome[a.produto] === 'Pelicula' || gruposPorNome[a.produto] === 'Fonte_Cabo');
-    pagosNaOS.forEach(a => {
-      servico -= a.valor;
+    // Película/fonte de O.S: conta pra quem lançou o acessório. A cobrada junto
+    // no pagamento da O.S sai do Serviço de quem recebeu esse pagamento.
+    const ehPeliculaOuFonte = a => gruposPorNome[a.produto] === 'Pelicula' || gruposPorNome[a.produto] === 'Fonte_Cabo';
+    const acessoriosOS = (await acessoriosDeOSNoPeriodo(periodo.inicio, periodo.fim)).filter(ehPeliculaOuFonte);
+    acessoriosOS.forEach(a => {
+      if(a.noPagamentoDaOS && a.vendedorDoPagamento === vendedor) servico -= a.valor;
+      if(a.lancou !== vendedor) return;
       if(gruposPorNome[a.produto] === 'Pelicula') pelicula += a.valor; else fonteCabo += a.valor;
     });
-    const somaPagosNaOS = pagosNaOS.reduce((s, a) => s + a.valor, 0);
-    document.getElementById('excedenteNota').textContent = pagosNaOS.length
-      ? `Inclui ${fmt(somaPagosNaOS)} de película/fonte cobradas junto com o conserto (O.S quitada): ` +
-        pagosNaOS.map(a => `${a.asc_job} ${a.produto} ${fmt(a.valor)}`).join('; ') + '.'
+    const doVendedor = acessoriosOS.filter(a => a.lancou === vendedor);
+    const junto = doVendedor.filter(a => a.noPagamentoDaOS);
+    document.getElementById('excedenteNota').textContent = doVendedor.length
+      ? `Película/fonte de O.S contam pra quem lançou o acessório: ${doVendedor.length} item(ns), ${fmt(doVendedor.reduce((s, a) => s + a.valor, 0))}.` +
+        (junto.length ? ` Desses, cobrados junto com o conserto (O.S quitada): ` +
+          junto.map(a => `${a.asc_job} ${a.produto} ${fmt(a.valor)}`).join('; ') + '.' : '')
       : '';
 
     const faturamentoPorCategoria = { servico, vendas_gerais: vendasGerais, pelicula, fonte_cabo: fonteCabo };
